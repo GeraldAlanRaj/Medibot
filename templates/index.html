@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MediBot AI | Premium Medical Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        .custom-div-icon {
+            background: none;
+            border: none;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 1.5rem !important;
+            padding: 0.5rem;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1) !important;
+            border: 1px solid #f1f5f9;
+        }
+
+        .leaflet-popup-tip {
+            display: none;
+        }
+
+        .leaflet-container {
+            font-family: 'Inter', sans-serif !important;
+        }
+
+        @keyframes pulse-blue {
+            0% {
+                box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 15px rgba(37, 99, 235, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+            }
+        }
+
+        .user-pulse {
+            animation: pulse-blue 2s infinite;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 h-screen flex overflow-hidden font-sans">
+    <!-- Sidebar Navigation -->
+    <aside class="w-20 lg:w-64 bg-slate-900 text-white flex flex-col transition-all duration-300 z-30">
+        <div class="p-4 lg:p-6 flex items-center gap-3 border-b border-slate-800">
+            <i class="fa-solid fa-stethoscope text-2xl text-blue-400"></i>
+            <h1 class="text-xl font-bold tracking-wide hidden lg:block">MediBot <span class="text-blue-400">AI</span>
+            </h1>
+        </div>
+
+        <nav class="flex-1 mt-6 px-2 space-y-2">
+            <!-- Patient Navigation (Hidden for Admin) -->
+            <div id="patient-nav" class="space-y-2">
+                <button onclick="switchTab('chat')" id="nav-chat"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-600 text-white transition-all group">
+                    <i class="fa-solid fa-comments text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Medical Chat</span>
+                </button>
+                <button onclick="switchTab('doctors')" id="nav-doctors"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-user-doctor text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Book Doctor</span>
+                </button>
+                <button onclick="switchTab('hospitals')" id="nav-hospitals"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-hospital text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Nearby Hospitals</span>
+                </button>
+                <button onclick="switchTab('analytics')" id="nav-analytics"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-chart-line text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">My Analytics</span>
+                </button>
+            </div>
+
+            <!-- Doctor Navigation (Only for Doctor) -->
+            <div id="doctor-nav" class="space-y-2 hidden">
+                <button onclick="switchTab('doctor-dashboard')" id="nav-doctor-dashboard"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-600 text-white transition-all group">
+                    <i class="fa-solid fa-gauge-high text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Dashboard</span>
+                </button>
+                <button onclick="switchTab('doctor-appointments')" id="nav-doctor-appointments"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-calendar-check text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Appointments</span>
+                </button>
+                <button onclick="switchTab('doctor-profile')" id="nav-doctor-profile"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-user-doctor text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">My Profile</span>
+                </button>
+            </div>
+
+            <!-- Admin Navigation (Only for Admin) -->
+            <div id="admin-nav" class="space-y-2 hidden">
+                <button onclick="switchTab('admin-dashboard')" id="nav-admin-dashboard"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-gauge-high text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Dashboard</span>
+                </button>
+                <button onclick="switchTab('admin-approvals')" id="nav-admin-approvals"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-user-check text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Doctor Approvals</span>
+                </button>
+                <button onclick="switchTab('admin-users')" id="nav-admin-users"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-users-gear text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">User Management</span>
+                </button>
+                <button onclick="switchTab('admin-monitoring')" id="nav-admin-monitoring"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-desktop text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">System Monitoring</span>
+                </button>
+                <button onclick="switchTab('admin-data')" id="nav-admin-data"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-database text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">System Data</span>
+                </button>
+            </div>
+
+        </nav>
+
+        <div class="p-4 border-t border-slate-800">
+            <div class="flex items-center gap-3 px-2 mb-4 hidden lg:flex">
+                <select id="language-select"
+                    class="w-full bg-slate-800 text-white text-xs rounded-lg px-2 py-2 outline-none border border-slate-700 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer">
+                    <option value="en">English</option>
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="es">Español (Spanish)</option>
+                    <option value="fr">Français (French)</option>
+                    <option value="de">Deutsch (German)</option>
+                    <option value="zh">中文 (Chinese)</option>
+                    <option value="ja">日本語 (Japanese)</option>
+                    <option value="ar">العربية (Arabic)</option>
+                </select>
+            </div>
+            <button id="clear-btn"
+                class="w-full flex items-center justify-center gap-2 p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all text-sm mb-2">
+                <i class="fa-solid fa-trash-can"></i>
+                <span class="hidden lg:block">Clear Chat</span>
+            </button>
+
+            <div class="flex items-center gap-3 px-2 mb-4">
+                <div class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white shrink-0">S
+                </div>
+                <div class="hidden lg:block overflow-hidden flex-1">
+                    <p class="text-xs font-bold truncate">User</p>
+                    <p id="user-role-display" class="text-[10px] text-slate-500">Account</p>
+                </div>
+                <button id="logout-btn" class="text-slate-400 hover:text-red-500 transition-all ml-auto" title="Logout">
+                    <i class="fa-solid fa-right-from-bracket text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
+        <!-- Top Bar -->
+        <header class="h-16 border-b flex items-center justify-between px-6 bg-white shrink-0 z-40 shadow-sm relative">
+            <h2 id="current-tab-title" class="text-xl font-bold text-slate-800 tracking-tight">Medical Chat</h2>
+            <div class="flex items-center gap-4">
+                <div
+                    class="flex items-center gap-2 text-[10px] font-black uppercase bg-green-50 text-green-600 px-4 py-2 rounded-full border border-green-100 tracking-widest">
+                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                    AI Analysis: Active
+                </div>
+            </div>
+        </header>
+
+        <!-- Dynamic Content Sections -->
+        <div class="flex-1 relative overflow-hidden bg-slate-50">
+            <!-- Medical Chat Section -->
+            <section id="section-chat" class="absolute inset-0 flex flex-col active-section">
+                <!-- Chat Messages Area -->
+                <div id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6 relative">
+                    <!-- Initial Greeting -->
+                    <div class="flex items-start gap-3">
+                        <div
+                            class="bg-blue-600 rounded-full p-2 h-10 w-10 flex items-center justify-center text-white flex-shrink-0 shadow-md">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div
+                            class="bg-white border border-gray-100 text-gray-800 p-4 rounded-2xl rounded-tl-none shadow-sm max-w-[80%]">
+                            <p class="text-sm leading-relaxed">Hello! I am your AI Medical Assistant. I can help you
+                                analyze symptoms, recommend treatments, or guide you to the right specialist. How can I
+                                assist you today?</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area Container (Keeps the floating look but stays below messages) -->
+                <div class="bg-slate-50 p-4 pb-8 flex justify-center">
+                    <div
+                        class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 flex items-center gap-2 ring-1 ring-slate-200 z-50">
+                        <button id="voice-btn"
+                            class="text-slate-400 hover:text-blue-500 p-3 rounded-xl hover:bg-blue-50 transition-all flex-shrink-0"
+                            title="Voice Input">
+                            <i class="fa-solid fa-microphone text-xl"></i>
+                        </button>
+                        <input type="text" id="user-input"
+                            class="flex-1 bg-transparent border-none py-3 px-2 focus:outline-none text-slate-700 placeholder:text-slate-400"
+                            placeholder="Describe your symptoms (e.g., 'I have a mild headache and fever')...">
+                        <button id="send-btn"
+                            class="bg-blue-600 hover:bg-blue-700 text-white p-3 px-6 rounded-xl transition-all flex items-center justify-center shadow-lg hover:shadow-blue-200 group flex-shrink-0">
+                            <span class="mr-2 font-medium hidden sm:block">Send Analysis</span>
+                            <i
+                                class="fa-solid fa-paper-plane group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Doctor Booking Section -->
+            <section id="section-doctors" class="absolute inset-0 bg-slate-50 p-6 pt-32 hidden overflow-y-auto">
+                <div class="max-w-7xl mx-auto">
+                    <!-- Premium Centered Header -->
+                    <div class="mb-16 text-center px-4">
+                        <div class="flex flex-col items-center gap-4 mb-4">
+                            <div class="w-16 h-1 bg-blue-500 rounded-full"></div>
+                            <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em]">Elite Provider
+                                Network</span>
+                        </div>
+                        <h2 class="text-5xl font-black text-slate-800 tracking-tight mb-4">Specialist Directory</h2>
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-slate-500 text-lg leading-relaxed">Access our exclusive network of
+                                board-certified medical professionals. Each specialist is strictly vetted for excellence
+                                and patient care integrity.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 px-4 pb-20" id="doctors-list">
+                        <!-- Doctor cards will be injected here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Nearby Facilities (Hospitals & Doctors) Section -->
+            <section id="section-hospitals"
+                class="absolute inset-0 bg-slate-50 hidden flex flex-col md:flex-row overflow-hidden">
+                <!-- Side Panel: Controls & List -->
+                <div
+                    class="w-full md:w-[450px] bg-white border-r border-slate-200 flex flex-col shadow-2xl z-20 overflow-hidden">
+                    <div class="p-8 border-b border-slate-100 bg-gradient-to-br from-white to-slate-50/50">
+                        <div class="flex items-center gap-4 mb-6">
+                            <div
+                                class="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
+                                <i class="fa-solid fa-map-location-dot"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-black text-slate-800 tracking-tight">Facility Locator</h2>
+                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Nearby Medical
+                                    Resources</p>
+                            </div>
+                        </div>
+
+                        <!-- Locator Toggle -->
+                        <div class="flex p-1.5 bg-slate-100 rounded-[1.25rem] mb-6">
+                            <button id="toggle-hospitals"
+                                class="flex-1 py-2.5 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 bg-white text-blue-600 shadow-sm border border-slate-200">
+                                <i class="fa-solid fa-hospital-user mr-2"></i> Hospitals
+                            </button>
+                            <button id="toggle-doctors"
+                                class="flex-1 py-2.5 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 text-slate-400 hover:text-slate-600">
+                                <i class="fa-solid fa-user-doctor mr-2"></i> Specialists
+                            </button>
+                        </div>
+
+                        <!-- Route Info (Hidden by default) -->
+                        <div id="route-panel"
+                            class="hidden animate-slide-up bg-slate-900 rounded-[1.5rem] p-6 text-white mb-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-[9px] font-black uppercase tracking-[0.2em] text-blue-400">Route
+                                    Analytics</span>
+                                <button id="close-route" class="text-slate-500 hover:text-white transition-colors">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-[9px] text-slate-400 uppercase font-black mb-1">Distance</div>
+                                    <div class="text-xl font-black" id="route-distance">0.0 km</div>
+                                </div>
+                                <div>
+                                    <div class="text-[9px] text-slate-400 uppercase font-black mb-1">Duration</div>
+                                    <div class="text-xl font-black" id="route-duration">0 min</div>
+                                </div>
+                            </div>
+                            <div class="mt-4 pt-4 border-t border-slate-800 flex items-center gap-3">
+                                <i class="fa-solid fa-car-side text-blue-400 text-xs"></i>
+                                <span class="text-[10px] font-bold text-slate-300">Optimized Driving Route</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results List -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30" id="facilities-list">
+                        <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <div
+                                class="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mb-4">
+                            </div>
+                            <p class="text-[10px] font-black uppercase tracking-widest">Scanning Area...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map Container -->
+                <div class="flex-1 relative bg-slate-200 z-10" id="hospital-map">
+                    <!-- Map will be initialized here -->
+                    <div class="absolute top-6 right-6 z-[1000] flex flex-col gap-2">
+                        <button id="current-location-btn"
+                            class="w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-blue-600 hover:bg-blue-600 hover:text-white transition-all duration-300 active:scale-95 border border-slate-100">
+                            <i class="fa-solid fa-location-crosshairs"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analytics Dashboard -->
+            <section id="section-analytics" class="absolute inset-0 bg-slate-50 p-6 pt-32 hidden overflow-y-auto">
+                <div class="max-w-7xl mx-auto">
+                    <!-- Premium Centered Header -->
+                    <div class="mb-16 text-center px-4">
+                        <div class="flex flex-col items-center gap-4 mb-4">
+                            <div class="w-16 h-1 bg-blue-500 rounded-full"></div>
+                            <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.4em]">Elite Health
+                                Systems</span>
+                        </div>
+                        <h2 class="text-5xl font-black text-slate-800 tracking-tight mb-4">Patient Health Dashboard</h2>
+                        <div class="max-w-2xl mx-auto">
+                            <p class="text-slate-500 text-lg leading-relaxed">Comprehensive oversight of your medical
+                                journey. Monitor symptoms, track engagement, and manage your clinical interactions with
+                                high-fidelity data visualization.</p>
+                        </div>
+                    </div>
+
+                    <!-- Elite Stat Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12 px-4 text-center">
+                        <div
+                            class="bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col items-center hover:shadow-xl transition-all duration-500 group">
+                            <div
+                                class="w-20 h-20 rounded-3xl bg-blue-50 text-blue-500 flex items-center justify-center text-3xl mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all duration-500 shadow-inner">
+                                <i class="fa-solid fa-clipboard-list"></i>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Total
+                                Sessions</p>
+                            <h4 class="text-4xl font-black text-slate-800 tracking-tighter" id="stat-sessions">0</h4>
+                        </div>
+
+                        <div
+                            class="bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col items-center hover:shadow-xl transition-all duration-500 group">
+                            <div
+                                class="w-20 h-20 rounded-3xl bg-red-50 text-red-500 flex items-center justify-center text-3xl mb-6 group-hover:bg-red-600 group-hover:text-white transition-all duration-500 shadow-inner">
+                                <i class="fa-solid fa-virus"></i>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Symptoms
+                                Tracked</p>
+                            <h4 class="text-4xl font-black text-slate-800 tracking-tighter" id="stat-symptoms">0</h4>
+                        </div>
+
+                        <div
+                            class="bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col items-center hover:shadow-xl transition-all duration-500 group">
+                            <div
+                                class="w-20 h-20 rounded-3xl bg-green-50 text-green-500 flex items-center justify-center text-3xl mb-6 group-hover:bg-green-600 group-hover:text-white transition-all duration-500 shadow-inner">
+                                <i class="fa-solid fa-calendar-check"></i>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-2">
+                                Appointments
+                            </p>
+                            <h4 class="text-4xl font-black text-slate-800 tracking-tighter" id="stat-appointments">0
+                            </h4>
+                        </div>
+
+                        <div
+                            class="bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col items-center hover:shadow-xl transition-all duration-500 group">
+                            <div
+                                class="w-20 h-20 rounded-3xl bg-purple-50 text-purple-500 flex items-center justify-center text-3xl mb-6 group-hover:bg-purple-600 group-hover:text-white transition-all duration-500 shadow-inner">
+                                <i class="fa-solid fa-heart-pulse"></i>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Health
+                                Index
+                            </p>
+                            <h4 class="text-4xl font-black text-slate-800 tracking-tighter" id="stat-index">92%</h4>
+                        </div>
+                    </div>
+
+                    <!-- Charts Section -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 px-4 pb-20">
+                        <div
+                            class="bg-white p-12 rounded-[2.5rem] shadow-sm border border-slate-200 hover:shadow-xl transition-all duration-500">
+                            <div class="flex items-center justify-between mb-10">
+                                <div class="flex items-center gap-4">
+                                    <div
+                                        class="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-sm">
+                                        <i class="fa-solid fa-chart-bar"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-black text-slate-800 tracking-tight">Symptom Frequency
+                                        </h3>
+                                        <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                                            Medical Analysis</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <canvas id="symptomsChart" class="max-h-[350px]"></canvas>
+                        </div>
+
+                        <div
+                            class="bg-white p-12 rounded-[2.5rem] shadow-sm border border-slate-200 hover:shadow-xl transition-all duration-500">
+                            <div class="flex items-center justify-between mb-10">
+                                <div class="flex items-center gap-4">
+                                    <div
+                                        class="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100 shadow-sm">
+                                        <i class="fa-solid fa-clock-rotate-left"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-black text-slate-800 tracking-tight">Conversation
+                                            Activity</h3>
+                                        <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                                            Engagement Metrics</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <canvas id="activityChart" class="max-h-[350px]"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- Doctor Dashboard Section -->
+        <section id="section-doctor-dashboard" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-16 block px-4 text-center">
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">Doctor Dashboard</h2>
+                    <p class="text-slate-500 text-lg mt-3">Welcome back, Dr. <span id="doctor-name-welcome">...</span>
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 px-4 mb-12">
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all border-b-4 border-b-blue-500">
+                        <div
+                            class="w-20 h-20 bg-blue-500 text-white rounded-[1.5rem] flex items-center justify-center shadow-lg mb-6">
+                            <i class="fa-solid fa-calendar-check text-3xl"></i>
+                        </div>
+                        <p class="text-xs text-slate-400 font-black uppercase tracking-widest mb-2">Total Appointments
+                        </p>
+                        <h4 class="text-4xl font-black text-slate-800" id="doctor-stat-total">0</h4>
+                    </div>
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all border-b-4 border-b-amber-500">
+                        <div
+                            class="w-20 h-20 bg-amber-500 text-white rounded-[1.5rem] flex items-center justify-center shadow-lg mb-6">
+                            <i class="fa-solid fa-clock text-3xl"></i>
+                        </div>
+                        <p class="text-xs text-slate-400 font-black uppercase tracking-widest mb-2">Pending Requests</p>
+                        <h4 class="text-4xl font-black text-slate-800" id="doctor-stat-pending">0</h4>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </section>
+
+        <!-- Doctor Appointments Section -->
+        <section id="section-doctor-appointments" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-6xl mx-auto">
+                <div class="mb-12 flex justify-between items-end">
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-800 tracking-tight">Appointment Manager</h2>
+                        <p class="text-slate-500 mt-2">Manage your patient bookings and schedules.</p>
+                    </div>
+                </div>
+                <div id="doctor-appointments-list" class="space-y-4">
+                    <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+                        <i class="fa-solid fa-calendar-day text-5xl mb-4 opacity-20"></i>
+                        <p>No appointments found</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Doctor Profile Section -->
+        <section id="section-doctor-profile" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto bg-slate-50/50">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden">
+                    <div
+                        class="h-48 bg-gradient-to-r from-blue-600 to-indigo-700 p-12 flex items-center justify-between">
+                        <h2 class="text-3xl font-black text-white">Professional Profile</h2>
+                        <button id="save-doctor-profile-btn"
+                            class="bg-white/20 hover:bg-white/30 text-white px-8 py-3 rounded-2xl font-bold backdrop-blur-md transition-all border border-white/30 flex items-center gap-2">
+                            <i class="fa-solid fa-save"></i> Save Changes
+                        </button>
+                    </div>
+                    <div class="p-12 -mt-16">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div class="space-y-4 md:col-span-2">
+                                <label class="text-sm font-black text-slate-400 uppercase tracking-widest">Full
+                                    Name</label>
+                                <input type="text" id="doc-profile-name"
+                                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                                    placeholder="Dr. John Doe">
+                            </div>
+                            <div class="space-y-4">
+                                <label
+                                    class="text-sm font-black text-slate-400 uppercase tracking-widest">Specialization</label>
+                                <input type="text" id="doc-profile-specialty"
+                                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                                    placeholder="e.g. Cardiologist">
+                            </div>
+                            <div class="space-y-4">
+                                <label class="text-sm font-black text-slate-400 uppercase tracking-widest">Clinic
+                                    Location</label>
+                                <input type="text" id="doc-profile-location"
+                                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                                    placeholder="Street Address, City">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 1. Admin Dashboard Section -->
+        <section id="section-admin-dashboard" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-16 block px-4 text-center">
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">01. Admin Dashboard</h2>
+                    <p class="text-slate-500 text-lg mt-3">Real-time system overview and performance metrics.</p>
+                </div>
+
+                <!-- Stats Grid - Focused and Centered -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 px-4">
+                    <!-- Total Users -->
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all hover:-translate-y-2 group border-b-4 border-b-blue-500">
+                        <div
+                            class="w-24 h-24 bg-blue-500 text-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-200 mb-8 group-hover:rotate-6 transition-transform">
+                            <i class="fa-solid fa-users text-4xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Total Users</p>
+                            <h4 class="text-5xl font-black text-slate-800" id="admin-stat-users">0</h4>
+                        </div>
+                    </div>
+
+                    <!-- Pending Doctors -->
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all hover:-translate-y-2 group border-b-4 border-b-amber-500">
+                        <div
+                            class="w-24 h-24 bg-amber-500 text-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-amber-200 mb-8 group-hover:rotate-6 transition-transform">
+                            <i class="fa-solid fa-user-doctor text-4xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Pending Doctors
+                            </p>
+                            <h4 class="text-5xl font-black text-slate-800" id="admin-stat-pending">0</h4>
+                        </div>
+                    </div>
+
+                    <!-- Messages -->
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all hover:-translate-y-2 group border-b-4 border-b-purple-500">
+                        <div
+                            class="w-24 h-24 bg-purple-500 text-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-purple-200 mb-6 group-hover:rotate-6 transition-transform">
+                            <i class="fa-solid fa-comments text-4xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Messages</p>
+                            <h4 class="text-5xl font-black text-slate-800" id="admin-stat-msgs">0</h4>
+                        </div>
+                    </div>
+
+                    <!-- Active Sessions -->
+                    <div
+                        class="bg-white border border-slate-200 p-10 rounded-[3rem] shadow-sm flex flex-col items-center text-center hover:shadow-2xl transition-all hover:-translate-y-2 group border-b-4 border-b-emerald-500">
+                        <div
+                            class="w-24 h-24 bg-emerald-500 text-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-emerald-200 mb-8 group-hover:rotate-6 transition-transform">
+                            <i class="fa-solid fa-clock-rotate-left text-4xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 font-black uppercase tracking-[0.2em] mb-2">Active Sessions
+                            </p>
+                            <h4 class="text-5xl font-black text-slate-800" id="admin-stat-sessions">0</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Doctor Approval Panel -->
+        <section id="section-admin-approvals" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-12 block px-4 text-left">
+                    <div class="flex items-center gap-4 mb-3">
+                        <div class="w-12 h-1.5 bg-amber-500 rounded-full"></div>
+                        <span class="text-xs font-black text-amber-600 uppercase tracking-[0.3em]">Verification
+                            Gateway</span>
+                    </div>
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">02. Doctor Approval Panel</h2>
+                    <p class="text-slate-500 text-lg mt-3">Review and verify applications from medical professionals
+                        joining the platform.</p>
+                </div>
+
+                <div
+                    class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all border-b-8 border-b-amber-500/10">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead class="bg-slate-50/50 border-b border-slate-200">
+                            <tr>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Doctor</th>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Experience</th>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Status</th>
+                                <th
+                                    class="px-8 py-6 text-right font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-doctors-approval-list">
+                            <!-- Pending doctors only -->
+                        </tbody>
+                    </table>
+                </div>
+        </section>
+
+        <!-- 3. User Management Section -->
+        <section id="section-admin-users" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-12 block px-4 text-left">
+                    <div class="flex items-center gap-4 mb-3">
+                        <div class="w-12 h-1.5 bg-purple-500 rounded-full"></div>
+                        <span class="text-xs font-black text-purple-600 uppercase tracking-[0.3em]">Elite
+                            Oversight</span>
+                    </div>
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">03. User Access Management</h2>
+                    <p class="text-slate-500 text-lg mt-3">Manage system roles, permissions, and security status for all
+                        registered users.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 px-4">
+                    <!-- Administrators Table (Top Left) -->
+                    <div
+                        class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all border-b-8 border-b-purple-500/10 flex flex-col min-h-[300px]">
+                        <div class="p-6 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
+                            <div class="flex items-center gap-4">
+                                <div
+                                    class="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+                                    <i class="fa-solid fa-user-shield text-lg"></i>
+                                </div>
+                                <h5 class="font-black text-slate-800 text-[11px] uppercase tracking-widest">System
+                                    Administrators</h5>
+                            </div>
+                            <span class="bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-[10px] font-black"
+                                id="admin-count-admins">0</span>
+                        </div>
+                        <div class="overflow-x-auto flex-1">
+                            <table class="w-full text-left text-sm border-collapse">
+                                <thead class="bg-slate-50/30 border-b border-slate-200">
+                                    <tr>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Administrator</th>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Status</th>
+                                        <th
+                                            class="px-8 py-5 text-right font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-admins-list"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Doctors Table (Top Right) -->
+                    <div
+                        class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all border-b-8 border-b-blue-500/10 flex flex-col min-h-[300px]">
+                        <div class="p-6 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
+                            <div class="flex items-center gap-4">
+                                <div
+                                    class="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                                    <i class="fa-solid fa-user-doctor text-lg"></i>
+                                </div>
+                                <h5 class="font-black text-slate-800 text-[11px] uppercase tracking-widest">Registered
+                                    Doctors</h5>
+                            </div>
+                            <span class="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black"
+                                id="admin-count-doctors">0</span>
+                        </div>
+                        <div class="overflow-x-auto flex-1">
+                            <table class="w-full text-left text-sm border-collapse">
+                                <thead class="bg-slate-50/30 border-b border-slate-200">
+                                    <tr>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Doctor</th>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Status</th>
+                                        <th
+                                            class="px-8 py-5 text-right font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-doctors-list"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Patients Table (Full Width Bottom) -->
+                    <div
+                        class="lg:col-span-2 bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all border-b-8 border-b-slate-500/10 flex flex-col min-h-[400px] mb-12">
+                        <div class="p-6 bg-slate-50/50 border-b border-slate-200 flex justify-between items-center">
+                            <div class="flex items-center gap-4">
+                                <div
+                                    class="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center">
+                                    <i class="fa-solid fa-bed-pulse text-lg"></i>
+                                </div>
+                                <h5 class="font-black text-slate-800 text-[11px] uppercase tracking-widest">Active
+                                    Patients Database</h5>
+                            </div>
+                            <span class="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black"
+                                id="admin-count-patients">0</span>
+                        </div>
+                        <div class="overflow-x-auto flex-1">
+                            <table class="w-full text-left text-sm border-collapse">
+                                <thead class="bg-slate-50/30 border-b border-slate-200">
+                                    <tr>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Patient Identity</th>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Registration Context</th>
+                                        <th
+                                            class="px-8 py-5 font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Security Guard</th>
+                                        <th
+                                            class="px-8 py-5 text-right font-black text-slate-500 uppercase tracking-widest text-[9px]">
+                                            Management</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-patients-list"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+        </section>
+
+        <!-- 4. System Monitoring -->
+        <section id="section-admin-monitoring" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-12 block px-4 text-left">
+                    <div class="flex items-center gap-4 mb-3">
+                        <div class="w-12 h-1.5 bg-purple-500 rounded-full"></div>
+                        <span class="text-xs font-black text-purple-600 uppercase tracking-[0.3em]">Secure
+                            Oversight</span>
+                    </div>
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">04. System Monitoring</h2>
+                    <p class="text-slate-500 text-lg mt-3">Monitor active chat sessions and system interactions for
+                        quality assurance.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="admin-chats-list">
+                    <!-- Chat sessions -->
+                </div>
+        </section>
+
+        <!-- 5. System Data Management -->
+        <section id="section-admin-data" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
+            <div class="max-w-7xl mx-auto">
+                <div class="mb-12 block px-4 text-left">
+                    <div class="flex items-center gap-4 mb-3">
+                        <div class="w-12 h-1.5 bg-emerald-500 rounded-full"></div>
+                        <span class="text-xs font-black text-emerald-600 uppercase tracking-[0.3em]">Database
+                            Integrity</span>
+                    </div>
+                    <h2 class="text-4xl font-black text-slate-800 tracking-tight">05. System Data Management</h2>
+                    <p class="text-slate-500 text-lg mt-3">Access and manage the underlying database structure and
+                        records.</p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-8 mb-10 max-w-2xl mx-auto">
+                    <!-- System Config Card -->
+                    <div
+                        class="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all border-b-8 border-b-slate-500/10 group">
+                        <div class="flex items-center gap-4 mb-6">
+                            <div
+                                class="w-14 h-14 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-gears text-2xl"></i>
+                            </div>
+                            <div>
+                                <h5 class="font-black text-slate-800 uppercase tracking-widest text-xs">System Registry
+                                </h5>
+                                <p class="text-[10px] text-slate-400 font-medium">Core Environment</p>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div
+                                class="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 italic">
+                                <span class="text-xs text-slate-600 font-medium">AI Service Status</span>
+                                <span
+                                    class="text-[10px] font-black text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full uppercase tracking-widest">Optimal</span>
+                            </div>
+                            <div
+                                class="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 italic">
+                                <span class="text-xs text-slate-600 font-medium">Database Version</span>
+                                <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">v2.4.1
+                                    Stable</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Doctor Data Table -->
+                <div
+                    class="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all border-b-8 border-b-emerald-500/10 mb-10">
+                    <div class="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
+                        <h5 class="font-black text-slate-800 uppercase tracking-widest text-xs">Healthcare Provider Data
+                            Source</h5>
+                        <span
+                            class="bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Master
+                            Record</span>
+                    </div>
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead class="bg-slate-50/50 border-b border-slate-200">
+                            <tr>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Provider Name</th>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Specialty</th>
+                                <th class="px-8 py-6 font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Location</th>
+                                <th
+                                    class="px-8 py-6 text-right font-black text-slate-500 uppercase tracking-widest text-[10px]">
+                                    Rating</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-system-doctors-list">
+                            <!-- All doctors will be listed here -->
+                        </tbody>
+                    </table>
+                </div>
+        </section>
+    </main>
+
+    <!-- Chat History Modal -->
+    <div id="chat-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] hidden items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 class="font-bold text-slate-800" id="chat-modal-title">Session History</h3>
+                <button onclick="closeChatModal()" class="text-slate-400 hover:text-slate-600"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="chat-modal-content" class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50">
+                <!-- Messages will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Appointment Modal -->
+    <div id="booking-modal"
+        class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+            <div class="p-6 border-b flex items-center justify-between">
+                <h3 class="font-bold text-lg">Pick Appointment Date</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-red-500"><i
+                        class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6">
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-sm font-medium text-slate-500 mb-1 block">Selected Doctor</label>
+                        <p id="modal-doctor-name" class="font-bold text-blue-600"></p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium text-slate-500 mb-1 block">Choose Slot</label>
+                        <input type="datetime-local" id="appointment-time"
+                            class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+            </div>
+            <div class="p-6 bg-slate-50 border-t flex gap-3">
+                <button onclick="closeModal()"
+                    class="flex-1 p-3 rounded-xl border font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+                <button id="confirm-booking-btn"
+                    class="flex-1 p-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-lg shadow-blue-200">Confirm
+                    Booking</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Overlay -->
+    <div id="auth-overlay" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden p-8">
+            <div class="text-center mb-8">
+                <i class="fa-solid fa-stethoscope text-4xl text-blue-600 mb-4"></i>
+                <h2 class="text-2xl font-bold text-slate-800">Welcome to MediBot AI</h2>
+                <p class="text-slate-500">Please sign in to continue</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-form-container">
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-600">Username</label>
+                        <input type="text" id="login-username"
+                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Enter username">
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-600">Password</label>
+                        <input type="password" id="login-password"
+                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Enter password">
+                    </div>
+                    <button id="auth-login-btn"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">Login</button>
+                    <p class="text-center text-sm text-slate-500">Don't have an account? <a href="#"
+                            onclick="showSignup()" class="text-blue-600 font-semibold">Sign Up</a></p>
+                </div>
+            </div>
+
+            <!-- Signup Form (Hidden by default) -->
+            <div id="signup-form-container" class="hidden">
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-600">Role</label>
+                        <select id="signup-role" onchange="toggleDoctorFields()"
+                            class="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 transition-all outline-none bg-slate-50 text-sm">
+                            <option value="patient">I am a Patient</option>
+                            <option value="doctor">I am a Doctor</option>
+                            <option value="admin">I am an Admin</option>
+                        </select>
+                    </div>
+                    <div id="signup-username-container">
+                        <label class="text-sm font-semibold text-slate-600">Username</label>
+                        <input type="text" id="signup-username"
+                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Choose username">
+                    </div>
+                    <!-- Doctor Specific Fields -->
+                    <div id="doctor-signup-fields" class="hidden space-y-4 border-t border-slate-100 pt-4 mt-4">
+                        <div>
+                            <label class="text-sm font-semibold text-slate-600">Full Name</label>
+                            <input type="text" id="signup-doc-name"
+                                class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="Dr. John Doe">
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-600">Speciality</label>
+                            <select id="signup-doc-specialty"
+                                class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                                <option value="Cardiologist">Cardiologist</option>
+                                <option value="Neurologist">Neurologist</option>
+                                <option value="Pediatrician">Pediatrician</option>
+                                <option value="General Physician">General Physician</option>
+                                <option value="Orthopedics">Orthopedics</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-600">Clinic Location</label>
+                            <input type="text" id="signup-doc-location"
+                                class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="City, State">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-600">Password</label>
+                        <input type="password" id="signup-password"
+                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="Choose password">
+                    </div>
+
+                    <button id="auth-signup-btn"
+                        class="w-full bg-green-600 hover:bg-green-700 text-white p-3 rounded-xl font-bold shadow-lg shadow-green-200 transition-all">Create
+                        Account</button>
+                    <p class="text-center text-sm text-slate-500">Already have an account? <a href="#"
+                            onclick="showLogin()" class="text-blue-600 font-semibold">Login</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/components.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
