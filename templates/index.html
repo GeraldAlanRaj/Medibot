@@ -68,15 +68,30 @@
                     <i class="fa-solid fa-comments text-xl w-8 text-center"></i>
                     <span class="font-medium hidden lg:block">Medical Chat</span>
                 </button>
+                <button onclick="switchTab('profile')" id="nav-profile"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-id-card text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">My Profile</span>
+                </button>
                 <button onclick="switchTab('doctors')" id="nav-doctors"
                     class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
                     <i class="fa-solid fa-user-doctor text-xl w-8 text-center"></i>
                     <span class="font-medium hidden lg:block">Book Doctor</span>
                 </button>
+                <button onclick="switchTab('patient-appointments')" id="nav-patient-appointments"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-calendar-days text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">My Appointments</span>
+                </button>
                 <button onclick="switchTab('hospitals')" id="nav-hospitals"
                     class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
                     <i class="fa-solid fa-hospital text-xl w-8 text-center"></i>
                     <span class="font-medium hidden lg:block">Nearby Hospitals</span>
+                </button>
+                <button onclick="switchTab('notifications')" id="nav-notifications"
+                    class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
+                    <i class="fa-solid fa-bell text-xl w-8 text-center"></i>
+                    <span class="font-medium hidden lg:block">Notifications</span>
                 </button>
                 <button onclick="switchTab('analytics')" id="nav-analytics"
                     class="w-full flex items-center gap-3 p-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all group">
@@ -223,6 +238,47 @@
                                 class="fa-solid fa-paper-plane group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform"></i>
                         </button>
                     </div>
+                </div>
+            </section>
+
+            <!-- Patient Profile Section -->
+            <section id="section-profile" class="absolute inset-0 bg-slate-50 p-6 pt-24 hidden overflow-y-auto">
+                <div class="max-w-4xl mx-auto bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
+                    <h3 class="text-2xl font-black text-slate-800 mb-6">Patient Profile</h3>
+                    <form id="profile-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input name="full_name" placeholder="Full Name" class="p-3 border border-slate-200 rounded-xl" />
+                        <input name="age" type="number" placeholder="Age" class="p-3 border border-slate-200 rounded-xl" />
+                        <select name="gender" class="p-3 border border-slate-200 rounded-xl">
+                            <option value="">Gender</option>
+                            <option value="female">Female</option>
+                            <option value="male">Male</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <input name="phone" placeholder="Phone" class="p-3 border border-slate-200 rounded-xl" />
+                        <input name="email" type="email" placeholder="Email" class="p-3 border border-slate-200 rounded-xl md:col-span-2" />
+                        <input name="location" placeholder="Location (City/Address)" class="p-3 border border-slate-200 rounded-xl md:col-span-2" />
+                        <textarea name="medical_history" placeholder="Medical History" class="p-3 border border-slate-200 rounded-xl md:col-span-2 min-h-[120px]"></textarea>
+                        <button id="save-profile-btn" type="button" class="md:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-bold">Save Profile</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Patient Appointments Section -->
+            <section id="section-patient-appointments" class="absolute inset-0 bg-slate-50 p-6 pt-24 hidden overflow-y-auto">
+                <div class="max-w-5xl mx-auto">
+                    <h3 class="text-2xl font-black text-slate-800 mb-6">My Appointments</h3>
+                    <div id="patient-appointments-list" class="space-y-4"></div>
+                </div>
+            </section>
+
+            <!-- Notifications Section -->
+            <section id="section-notifications" class="absolute inset-0 bg-slate-50 p-6 pt-24 hidden overflow-y-auto">
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-2xl font-black text-slate-800">Notifications</h3>
+                        <button id="mark-all-notifications-btn" class="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold">Mark all as read</button>
+                    </div>
+                    <div id="notifications-list" class="space-y-3"></div>
                 </div>
             </section>
 
@@ -481,10 +537,14 @@
         <!-- Doctor Appointments Section -->
         <section id="section-doctor-appointments" class="absolute inset-0 p-10 pt-32 hidden overflow-y-auto">
             <div class="max-w-6xl mx-auto">
-                <div class="mb-12 flex justify-between items-end">
+                <div class="mb-12 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
                     <div>
                         <h2 class="text-3xl font-black text-slate-800 tracking-tight">Appointment Manager</h2>
                         <p class="text-slate-500 mt-2">Manage your patient bookings and schedules.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="date" id="doctor-appointments-date" class="px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+                        <button id="doctor-appointments-today" class="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold">Today</button>
                     </div>
                 </div>
                 <div id="doctor-appointments-list" class="space-y-4">
@@ -530,6 +590,22 @@
                                 <input type="text" id="doc-profile-location"
                                     class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
                                     placeholder="Street Address, City">
+                            </div>
+                        </div>
+
+                        <div class="mt-10 border-t pt-8">
+                            <h4 class="text-lg font-black text-slate-800 mb-4">Weekly Free Time Slots</h4>
+                            <p class="text-sm text-slate-500 mb-4">Set your daily availability in 24h format (HH:MM).</p>
+                            <div id="doctor-availability-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+                            <button id="save-availability-btn" class="mt-4 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold">Save Availability</button>
+                        </div>
+
+                        <div class="mt-10 border-t pt-8">
+                            <h4 class="text-lg font-black text-slate-800 mb-2">Upload Certificate for Verification</h4>
+                            <p id="doctor-cert-status" class="text-sm text-slate-500 mb-3">No certificate uploaded yet.</p>
+                            <div class="flex flex-col md:flex-row gap-3">
+                                <input type="file" id="doctor-certificate-file" accept=".pdf,.png,.jpg,.jpeg" class="p-2 border border-slate-200 rounded-xl" />
+                                <button id="upload-certificate-btn" class="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold">Upload Certificate</button>
                             </div>
                         </div>
                     </div>
@@ -895,9 +971,10 @@
                         <p id="modal-doctor-name" class="font-bold text-blue-600"></p>
                     </div>
                     <div>
-                        <label class="text-sm font-medium text-slate-500 mb-1 block">Choose Slot</label>
-                        <input type="datetime-local" id="appointment-time"
-                            class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                        <label class="text-sm font-medium text-slate-500 mb-1 block">Choose Date</label>
+                        <input type="date" id="appointment-date"
+                            class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 mb-3">
+                        <div id="available-slots" class="flex flex-wrap gap-2"></div>
                     </div>
                 </div>
             </div>
@@ -951,7 +1028,6 @@
                             class="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 transition-all outline-none bg-slate-50 text-sm">
                             <option value="patient">I am a Patient</option>
                             <option value="doctor">I am a Doctor</option>
-                            <option value="admin">I am an Admin</option>
                         </select>
                     </div>
                     <div id="signup-username-container">

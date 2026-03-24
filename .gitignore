@@ -1,41 +1,64 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
 
-# Virtual env
+# =========================
+# Virtual Environment
+# =========================
 venv/
-.env/
+.env
 
-# Database files
+# =========================
+# Databases (AUTO GENERATED)
+# =========================
 *.db
 
-# ML models / binaries
+# =========================
+# ML / AI Models (AUTO GENERATED)
+# =========================
 *.pkl
 models/
 *.pt
 *.bin
 
+# =========================
+# Cookies / Sensitive Data
+# =========================
+cookies.txt
+
+# =========================
+# Generated Files
+# =========================
+ace_requirements_*.txt
+
+# =========================
+# Uploaded User Data ONLY
+# =========================
+data/certificates/
+
+# =========================
 # Logs
+# =========================
 *.log
 
-# OS files
+# =========================
+# OS Files
+# =========================
 .DS_Store
 Thumbs.db
 
-# Environment variables
-.env
-
-# Cookies / sessions (IMPORTANT)
-cookies.txt
-
+# =========================
 # IDE
+# =========================
 .vscode/
 .idea/
 
-# Temporary files
+# =========================
+# Temporary Files
+# =========================
 *.swp
-
-#dataset
-data

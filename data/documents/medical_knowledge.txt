@@ -1,0 +1,30 @@
+# Medical Knowledge Base
+
+## Respiratory Infections
+**Common Cold**: Symptoms include a runny or stuffy nose, sore throat, cough, congestion, mild body aches or a mild headache, sneezing, low-grade fever, and generally feeling unwell (malaise). Treatment involves rest, hydration, saline nasal drops, and over-the-counter medications like acetaminophen or ibuprofen for pain and fever. Decongestants can help with nasal stuffiness.
+**Influenza (Flu)**: Symptoms include fever over 100.4 F (38 C), aching muscles, chills and sweats, headache, dry and persistent cough, fatigue and weakness, nasal congestion, and sore throat. Treatment includes antiviral medications if prescribed early, plenty of rest, and fluids. Over-the-counter pain relievers can reduce fever and muscle aches.
+**COVID-19**: Symptoms range from mild to severe, including fever, chills, cough, shortness of breath, fatigue, muscle or body aches, headache, new loss of taste or smell, sore throat, congestion or runny nose, nausea or vomiting, and diarrhea. If someone experiences difficulty breathing, persistent pain or pressure in the chest, new confusion, inability to wake or stay awake, or pale, gray, or blue-colored skin, lips, or nail beds, they need emergency medical care immediately.
+
+## Mosquito-Borne Diseases
+**Dengue Fever**: Transmitted by Aedes mosquitoes. Symptoms include sudden high fever (often 104 F/40 C), severe headaches, pain behind the eyes, severe joint and muscle pain, fatigue, nausea, vomiting, and skin rash. In severe cases, it can cause bleeding from the gums or nose. Treatment involves managing symptoms with acetaminophen (avoid ibuprofen or aspirin as they increase bleeding risk), adequate hydration, and rest.
+**Malaria**: Caused by parasites transmitted by Anopheles mosquitoes. Symptoms include moderate to severe shaking chills, high fever, profuse sweating, headache, nausea, vomiting, abdominal pain, diarrhea, anemia, and muscle pain. Treatment requires specific antimalarial prescription drugs based on the strain and geography. Immediate medical diagnosis is required.
+
+## Chronic Conditions
+**Hypertension (High Blood Pressure)**: Often called a "silent killer" because it typically has no symptoms until it reaches a severe or life-threatening stage. When symptoms do occur, they can include headaches, shortness of breath, or nosebleeds. Management involves lifestyle changes (exercise, reduced sodium diet, stress reduction) and antihypertensive medications. Left untreated, it can lead to heart disease, stroke, or kidney failure.
+**Type 2 Diabetes**: Characterized by high blood sugar levels. Symptoms include increased thirst, frequent urination, increased hunger, unintended weight loss, fatigue, blurred vision, slow-healing sores, and frequent infections. Management includes blood sugar monitoring, a healthy diet, regular exercise, weight loss, and potentially diabetes medications or insulin therapy.
+
+## Cardiovascular Emergencies
+**Heart Attack (Myocardial Infarction)**: Symptoms include pressure, tightness, pain, or a squeezing or aching sensation in the chest or arms that may spread to the neck, jaw, or back. Other symptoms are nausea, indigestion, heartburn or abdominal pain, shortness of breath, cold sweat, fatigue, and lightheadedness or sudden dizziness. A heart attack is a life-threatening emergency. The patient should chew an aspirin if available and not allergic, and emergency services (e.g., 911) must be called immediately.
+
+## Gastrointestinal Issues
+**Gastroenteritis (Stomach Flu)**: Symptoms include watery, usually non-bloody diarrhea, abdominal cramps and pain, nausea, vomiting, and occasional low-grade fever. Treatment focuses on keeping the patient hydrated. Oral rehydration solutions (ORS) are essential. Seek medical help if unable to keep liquids down for 24 hours, if vomiting blood, if there is blood in the stool, or if a fever is above 104 F (40 C).
+**Acid Reflux / GERD**: Symptoms include a burning sensation in the chest (heartburn) usually after eating or at night, chest pain, difficulty swallowing, regurgitation of food or sour liquid, and a sensation of a lump in the throat. Over-the-counter antacids or acid reducers (like H2 blockers or PPIs) and lifestyle changes (avoiding trigger foods, not eating before bed) are primary treatments.
+
+## First Aid
+**Burns**: For minor burns (1st degree and small 2nd degree), cool the burn under running cool (not cold) water for 10-15 minutes. Do not apply ice, butter, or ointments immediately. Cover with a sterile, non-adhesive bandage. For severe burns (3rd degree) or burns covering large areas, call emergency services immediately; do not remove burnt clothing stuck to the skin.
+**Sprains and Strains**: Follow the R.I.C.E. protocol: Rest the injured area. Ice the area for 15-20 minutes several times a day to reduce swelling. Compress the area with an elastic bandage. Elevate the injured limb above the level of the heart to reduce swelling.
+**Bleeding**: For minor cuts or scrapes, clean the wound with soap and water and apply a clean bandage. For severe bleeding, apply direct pressure to the wound with a clean cloth or sterile dressing. Maintain pressure until bleeding stops. elevate the wounded area if possible. If bleeding does not stop, seek emergency medical assistance.
+
+## Neurological
+**Migraine**: A neurological condition characterized by intense, debilitating headaches, often on one side of the head. Symptoms may also include nausea, vomiting, difficulty speaking, numbness or tingling, and sensitivity to light and sound. Some people experience auras before the headache. Treatment includes rest in a dark, quiet room, pain-relieving medications (triptans, ibuprofen), and preventive medications.
+**Stroke**: Medical emergency requiring immediate attention. Remember the F.A.S.T. test: Face drooping, Arm weakness, Speech difficulty, Time to call emergency services. Other symptoms include sudden numbness or weakness in the face, arm, or leg (especially on one side), sudden confusion, trouble seeing, trouble walking, dizziness, and loss of balance or coordination.

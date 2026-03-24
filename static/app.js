@@ -14,6 +14,8 @@ let hospitalMarkers = [];
 let userLocation = null;
 let currentFacilityType = 'hospital';
 let routingLayer = null;
+let selectedAppointmentSlot = null;
+let notificationsRefreshTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkAuth();
@@ -25,6 +27,8 @@ function initApp() {
     // Show default tab if not already set (e.g. by updateUIForRole)
     if (currentUser && currentUser.role === 'admin') {
         switchTab('admin-dashboard');
+    } else if (currentUser && currentUser.role === 'doctor' && !currentUser.is_verified) {
+        switchTab('doctor-profile');
     } else {
         switchTab('chat');
     }
@@ -33,9 +37,22 @@ function initApp() {
     if (sessionId) {
         updateAnalytics();
     }
+
+    if (notificationsRefreshTimer) clearInterval(notificationsRefreshTimer);
+    notificationsRefreshTimer = setInterval(() => {
+        if (!currentUser) return;
+        if (currentUser.role === 'patient') {
+            loadNotifications();
+            if (currentTab === 'patient-appointments') loadPatientAppointments();
+        } else if (currentUser.role === 'doctor' && currentTab === 'doctor-appointments') {
+            loadDoctorData();
+        }
+    }, 45000);
 }
 
 function setupEventListeners() {
+    sanitizeSignupRoleOptions();
+
     const userInput = document.getElementById("user-input");
     const sendBtn = document.getElementById("send-btn");
     const voiceBtn = document.getElementById("voice-btn");
@@ -43,6 +60,12 @@ function setupEventListeners() {
     const langSelect = document.getElementById("language-select");
     const saveProfileBtn = document.getElementById("save-profile-btn");
     const confirmBookingBtn = document.getElementById("confirm-booking-btn");
+    const markAllNotificationsBtn = document.getElementById("mark-all-notifications-btn");
+    const saveAvailabilityBtn = document.getElementById("save-availability-btn");
+    const uploadCertificateBtn = document.getElementById("upload-certificate-btn");
+    const appointmentDate = document.getElementById("appointment-date");
+    const doctorAppointmentsDate = document.getElementById("doctor-appointments-date");
+    const doctorAppointmentsToday = document.getElementById("doctor-appointments-today");
 
     if (sendBtn) {
         sendBtn.onclick = () => {
@@ -93,6 +116,26 @@ function setupEventListeners() {
 
     if (saveProfileBtn) saveProfileBtn.onclick = saveProfile;
     if (confirmBookingBtn) confirmBookingBtn.onclick = confirmBooking;
+    if (markAllNotificationsBtn) markAllNotificationsBtn.onclick = markAllNotificationsRead;
+    if (saveAvailabilityBtn) saveAvailabilityBtn.onclick = saveAvailability;
+    if (uploadCertificateBtn) uploadCertificateBtn.onclick = uploadCertificate;
+    if (appointmentDate) {
+        appointmentDate.onchange = () => {
+            if (selectedDoctor) loadDoctorSlots(selectedDoctor.id);
+        };
+    }
+    if (doctorAppointmentsDate) {
+        doctorAppointmentsDate.onchange = () => {
+            loadDoctorAppointmentsForDate(doctorAppointmentsDate.value);
+        };
+    }
+    if (doctorAppointmentsToday) {
+        doctorAppointmentsToday.onclick = () => {
+            const today = getTodayDateString();
+            if (doctorAppointmentsDate) doctorAppointmentsDate.value = today;
+            loadDoctorAppointmentsForDate(today);
+        };
+    }
 
     // Auth Listeners
     const loginBtn = document.getElementById("auth-login-btn");
@@ -144,7 +187,7 @@ async function checkAuth() {
                 }
             }
             updateUIForRole(data.user.role);
-            // if (data.profile) fillProfileForm(data.profile);
+            if (data.profile) fillProfileForm(data.profile);
             initApp();
         }
     } catch (e) {
@@ -156,6 +199,7 @@ function updateUIForRole(role) {
     const isAdmin = role === 'admin';
     const isDoctor = role === 'doctor';
     const isPatient = role === 'patient';
+    const isVerifiedDoctor = isDoctor && currentUser && currentUser.is_verified;
     currentUser.role = role;
 
     // Toggle Navigation Visibility
@@ -166,6 +210,11 @@ function updateUIForRole(role) {
     if (patientNav) patientNav.classList.toggle("hidden", !isPatient);
     if (adminNav) adminNav.classList.toggle("hidden", !isAdmin);
     if (doctorNav) doctorNav.classList.toggle("hidden", !isDoctor);
+
+    const doctorDashboardBtn = document.getElementById('nav-doctor-dashboard');
+    const doctorAppointmentsBtn = document.getElementById('nav-doctor-appointments');
+    if (doctorDashboardBtn) doctorDashboardBtn.classList.toggle('hidden', isDoctor && !isVerifiedDoctor);
+    if (doctorAppointmentsBtn) doctorAppointmentsBtn.classList.toggle('hidden', isDoctor && !isVerifiedDoctor);
 
     // User Identity Display
     const userDisplay = document.querySelector(".w-10.h-10.rounded-full.bg-blue-500");
@@ -180,11 +229,12 @@ function updateUIForRole(role) {
     if (isAdmin) {
         switchTab('admin-dashboard');
     } else if (isDoctor) {
-        switchTab('doctor-dashboard');
+        switchTab(isVerifiedDoctor ? 'doctor-dashboard' : 'doctor-profile');
     }
 }
 
 function showSignup() {
+    sanitizeSignupRoleOptions();
     document.getElementById("login-form-container").classList.add("hidden");
     document.getElementById("signup-form-container").classList.remove("hidden");
 }
@@ -205,7 +255,17 @@ async function login() {
     });
     const data = await res.json();
     if (data.success) {
-        location.reload();
+        if (data.pending_verification) {
+            alert("Doctor account pending verification. Please upload your certificate from the Doctor Profile tab.");
+        }
+        await checkAuth();
+        if (currentUser && currentUser.role === 'doctor' && !currentUser.is_verified) {
+            switchTab('doctor-profile');
+            return;
+        }
+        if (!currentUser) {
+            location.reload();
+        }
     } else {
         alert(data.error);
     }
@@ -239,7 +299,11 @@ async function signup() {
     });
     const data = await res.json();
     if (data.success) {
-        alert("Account created! Please login.");
+        if (data.pending_verification) {
+            alert("Doctor account created! Please log in and upload your certificate for admin approval.");
+        } else {
+            alert("Account created! Please login.");
+        }
         showLogin();
     } else {
         alert(data.error);
@@ -247,7 +311,11 @@ async function signup() {
 }
 
 function toggleDoctorFields() {
-    const role = document.getElementById("signup-role").value;
+    const roleSelect = document.getElementById("signup-role");
+    if (!roleSelect) return;
+    if (roleSelect.value === 'admin') roleSelect.value = 'patient';
+
+    const role = roleSelect.value;
     const docFields = document.getElementById("doctor-signup-fields");
     const usernameField = document.getElementById("signup-username-container");
 
@@ -258,6 +326,22 @@ function toggleDoctorFields() {
         docFields.classList.add("hidden");
         if (usernameField) usernameField.classList.remove("hidden");
     }
+}
+
+function sanitizeSignupRoleOptions() {
+    const roleSelect = document.getElementById("signup-role");
+    if (!roleSelect) return;
+
+    const adminOption = roleSelect.querySelector('option[value="admin"]');
+    if (adminOption) {
+        adminOption.remove();
+    }
+
+    if (roleSelect.value === 'admin') {
+        roleSelect.value = 'patient';
+    }
+
+    toggleDoctorFields();
 }
 
 function fillProfileForm(profile) {
@@ -294,7 +378,10 @@ function switchTab(tabId) {
     // Update Title
     const titles = {
         chat: "Medical Chat Analysis",
+        profile: "Patient Profile",
         doctors: "Specialist Directory",
+        'patient-appointments': 'My Appointments',
+        notifications: 'Notifications',
         hospitals: "Nearby Emergency Facilities",
         analytics: "Patient Health Dashboard",
         'admin-dashboard': 'Admin Dashboard',
@@ -311,6 +398,9 @@ function switchTab(tabId) {
 
     // Lazy load data
     if (tabId === 'doctors') loadDoctors();
+    if (tabId === 'profile') loadPatientProfile();
+    if (tabId === 'patient-appointments') loadPatientAppointments();
+    if (tabId === 'notifications') loadNotifications();
     if (tabId.startsWith('admin-')) loadAdminData();
     if (tabId.startsWith('doctor-')) loadDoctorData();
     if (tabId === 'hospitals') {
@@ -496,7 +586,13 @@ function hideRoute() {
 
 function openBookingModal(doctor) {
     selectedDoctor = doctor;
+    selectedAppointmentSlot = null;
     document.getElementById('modal-doctor-name').innerText = doctor.name;
+    const dateInput = document.getElementById('appointment-date');
+    if (dateInput) {
+        dateInput.value = getTodayDateString();
+    }
+    loadDoctorSlots(doctor.id);
     document.getElementById('booking-modal').classList.remove('hidden');
     document.getElementById('booking-modal').classList.add('flex');
 }
@@ -507,7 +603,7 @@ function closeModal() {
 }
 
 async function confirmBooking() {
-    const time = document.getElementById('appointment-time').value;
+    const time = selectedAppointmentSlot;
     if (!time) return alert("Please select a time slot");
 
     try {
@@ -529,11 +625,64 @@ async function confirmBooking() {
             alert("Appointment successfully secured!");
             closeModal();
             updateAnalytics();
+            loadPatientAppointments();
+            loadNotifications();
         } else {
             alert(data.error || "Booking failure.");
         }
     } catch (e) {
         alert("Booking failure. Please try later.");
+    }
+}
+
+async function loadDoctorSlots(doctorId) {
+    const slotsContainer = document.getElementById('available-slots');
+    const dateInput = document.getElementById('appointment-date');
+    if (!slotsContainer || !dateInput) return;
+
+    selectedAppointmentSlot = null;
+    slotsContainer.innerHTML = '<span class="text-xs text-slate-400">Loading slots...</span>';
+
+    try {
+        const date = normalizeISODateValue(dateInput.value);
+        if (!date) {
+            slotsContainer.innerHTML = '<span class="text-xs text-amber-600">Please choose a valid date.</span>';
+            return;
+        }
+
+        const res = await fetch(`/api/doctor/slots?doctor_id=${doctorId}&date=${date}&days=1`);
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error((data && data.error) || 'Failed to load slots');
+        }
+        if (!Array.isArray(data)) {
+            throw new Error((data && data.error) || 'Invalid slot response');
+        }
+        const sameDay = Array.isArray(data) ? (data.find(d => d.date === date) || { slots: [] }) : { slots: [] };
+
+        if (!sameDay.slots || sameDay.slots.length === 0) {
+            slotsContainer.innerHTML = '<span class="text-xs text-amber-600">No free slots available for this date.</span>';
+            return;
+        }
+
+        slotsContainer.innerHTML = '';
+        sameDay.slots.forEach(slot => {
+            const t = slot.split('T')[1] || slot;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all';
+            btn.innerText = t;
+            btn.onclick = () => {
+                selectedAppointmentSlot = slot;
+                document.querySelectorAll('#available-slots button').forEach(b => {
+                    b.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
+                });
+                btn.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
+            };
+            slotsContainer.appendChild(btn);
+        });
+    } catch (e) {
+        slotsContainer.innerHTML = `<span class="text-xs text-red-500">${e.message || 'Failed to load free slots.'}</span>`;
     }
 }
 
@@ -549,9 +698,107 @@ async function saveProfile() {
             body: JSON.stringify({ profile })
         });
         const data = await res.json();
-        if (data.success) alert("Health record updated.");
+        if (data.success) {
+            alert("Health record updated.");
+            loadNotifications();
+        }
     } catch (e) {
         alert("Sync error.");
+    }
+}
+
+async function loadPatientProfile() {
+    try {
+        const res = await fetch('/api/me');
+        const data = await res.json();
+        if (data && data.profile) fillProfileForm(data.profile);
+    } catch (e) {
+        console.error('Failed to load profile', e);
+    }
+}
+
+async function loadPatientAppointments() {
+    const container = document.getElementById('patient-appointments-list');
+    if (!container) return;
+    container.innerHTML = '<div class="text-slate-400 text-sm">Loading appointments...</div>';
+
+    try {
+        const res = await fetch('/api/patient/appointments');
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+            container.innerHTML = '<div class="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-500">No appointments yet.</div>';
+            return;
+        }
+
+        container.innerHTML = data.map(a => `
+            <div class="bg-white border border-slate-200 rounded-xl p-4">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <div class="font-bold text-slate-800">${a.doctor_name} (${a.specialty})</div>
+                        <div class="text-sm text-slate-500">${a.appointment_time} • ${a.location}</div>
+                    </div>
+                    <span class="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${getStatusClass(a.status)}">${a.status}</span>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="text-red-500 text-sm">Failed to load appointments.</div>';
+    }
+}
+
+async function loadNotifications() {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+
+    try {
+        const res = await fetch('/api/notifications');
+        const data = await res.json();
+        const items = data.items || [];
+        if (!items.length) {
+            list.innerHTML = '<div class="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-500">No notifications.</div>';
+            return;
+        }
+
+        list.innerHTML = items.map(n => `
+            <div class="bg-white border ${n.is_read ? 'border-slate-200' : 'border-blue-200'} rounded-xl p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <div class="font-bold text-slate-800">${n.title}</div>
+                        <div class="text-sm text-slate-600">${n.message}</div>
+                        <div class="text-[11px] text-slate-400 mt-1">${n.created_at || ''}</div>
+                    </div>
+                    ${n.is_read ? '' : `<button onclick="markNotificationRead(${n.id})" class="text-xs font-bold text-blue-600">Mark read</button>`}
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = '<div class="text-red-500 text-sm">Failed to load notifications.</div>';
+    }
+}
+
+async function markNotificationRead(notificationId) {
+    try {
+        await fetch('/api/notifications/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notification_id: notificationId })
+        });
+        loadNotifications();
+    } catch (e) {
+        console.error('Failed to mark notification read', e);
+    }
+}
+
+async function markAllNotificationsRead() {
+    try {
+        await fetch('/api/notifications/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ all: true })
+        });
+        loadNotifications();
+    } catch (e) {
+        console.error('Failed to mark all notifications', e);
     }
 }
 
@@ -739,20 +986,22 @@ function initCharts() {
 // Admin Functions
 async function loadAdminData() {
     try {
-        const [usersRes, chatsRes, statsRes, docsRes] = await Promise.all([
+        const [usersRes, chatsRes, statsRes, docsRes, certRes] = await Promise.all([
             fetch('/api/admin/users'),
             fetch('/api/admin/chats'),
             fetch('/api/admin/stats'),
-            fetch('/api/doctors')
+            fetch('/api/doctors'),
+            fetch('/api/admin/doctor/certificates')
         ]);
 
         const users = await usersRes.json();
         const chats = await chatsRes.json();
         const stats = await statsRes.json();
         const doctors = await docsRes.json();
+        const pendingCerts = certRes.ok ? await certRes.json() : [];
 
         renderAdminStats(stats);
-        renderAdminDoctorsApproval(users.filter(u => u.role === 'doctor' && !u.is_verified));
+        renderAdminDoctorsApproval(users.filter(u => u.role === 'doctor' && !u.is_verified), pendingCerts);
         renderAdminUsers(users);
         renderAdminChats(chats);
         renderAdminSystemData(doctors);
@@ -761,26 +1010,46 @@ async function loadAdminData() {
     }
 }
 
-function renderAdminDoctorsApproval(doctors) {
+function renderAdminDoctorsApproval(doctors, pendingCerts = []) {
     const list = document.getElementById('admin-doctors-approval-list');
     if (doctors.length === 0) {
         list.innerHTML = '<tr><td colspan="4" class="px-6 py-10 text-center text-slate-400 italic text-xs">No pending doctor approvals</td></tr>';
         return;
     }
+
+    const certByUser = {};
+    pendingCerts.forEach(c => {
+        certByUser[c.user_id] = c;
+    });
+
     list.innerHTML = doctors.map(doc => `
         <tr class="border-b border-slate-100 hover:bg-slate-50 transition-all">
             <td class="px-6 py-4 font-bold text-slate-800">${doc.username}</td>
-            <td class="px-6 py-4 text-slate-500">5+ Years (Verified Degree)</td>
+            <td class="px-6 py-4 text-slate-500">${certByUser[doc.id] ? 'Certificate Uploaded' : 'No Certificate Yet'}</td>
             <td class="px-6 py-4">
                 <span class="bg-amber-100 text-amber-600 px-2 py-1 rounded-full text-[10px] font-bold">AWAITING APPROVAL</span>
             </td>
             <td class="px-6 py-4">
-                <button onclick="adminAction('verify', ${doc.id})" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all">
-                    Approve Doctor
-                </button>
+                ${certByUser[doc.id] ? `<button onclick="window.open('/api/admin/doctor/certificate/${certByUser[doc.id].id}/download','_blank')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all mr-2">Open Proof</button>` : ''}
+                ${certByUser[doc.id] ? `<button onclick="reviewCertificate(${certByUser[doc.id].id}, 'approved')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all mr-2">Approve Proof</button>` : `<span class="inline-block bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg text-[10px] font-bold mr-2">Awaiting Certificate</span>`}
+                ${certByUser[doc.id] ? `<button onclick="reviewCertificate(${certByUser[doc.id].id}, 'rejected')" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all">Reject Proof</button>` : ''}
             </td>
         </tr>
     `).join('');
+}
+
+async function reviewCertificate(certificateId, status) {
+    try {
+        const res = await fetch('/api/admin/doctor/certificate/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ certificate_id: certificateId, status })
+        });
+        const data = await res.json();
+        if (data.success) loadAdminData();
+    } catch (e) {
+        console.error('Failed to review certificate', e);
+    }
 }
 
 function renderAdminStats(stats) {
@@ -935,7 +1204,11 @@ async function viewChatHistory(sessionId, username) {
     modal.classList.add('flex');
 
     try {
-        const res = await fetch(`/api/admin/chat/${sessionId}`);
+        const endpoint = (currentUser && currentUser.role === 'doctor')
+            ? `/api/doctor/chat/${sessionId}`
+            : `/api/admin/chat/${sessionId}`;
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error('Failed to fetch chat history');
         const history = await res.json();
 
         content.innerHTML = history.map(msg => `
@@ -980,11 +1253,50 @@ function renderAdminSystemData(doctors) {
 }
 
 // Doctor Dashboard Functions
+function getTodayDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function normalizeISODateValue(value) {
+    if (!value) return '';
+    const raw = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const m = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return '';
+}
+
+async function loadDoctorAppointmentsForDate(dateValue) {
+    if (currentUser && currentUser.role === 'doctor' && !currentUser.is_verified) {
+        renderDoctorAppointments([]);
+        return;
+    }
+    const safeDate = normalizeISODateValue(dateValue || '');
+    const endpoint = safeDate
+        ? `/api/doctor/appointments?date=${encodeURIComponent(safeDate)}`
+        : '/api/doctor/appointments';
+    try {
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error('Failed to load doctor appointments');
+        const appointments = await res.json();
+        renderDoctorAppointments(Array.isArray(appointments) ? appointments : []);
+    } catch (e) {
+        console.error('Failed to load doctor appointments', e);
+        renderDoctorAppointments([]);
+    }
+}
+
 async function loadDoctorData() {
     try {
         const res = await fetch("/api/me");
         const data = await res.json();
         const doctor = data.doctor_info;
+        const certificate = data.certificate;
+        const isVerifiedDoctor = currentUser && currentUser.is_verified;
 
         if (doctor) {
             const welcome = document.getElementById("doctor-name-welcome");
@@ -998,28 +1310,152 @@ async function loadDoctorData() {
             if (specialtyInput) specialtyInput.value = doctor.specialty || "";
             if (locInput) locInput.value = doctor.location || "";
 
-            // Load Appointments
-            const appRes = await fetch("/api/doctor/appointments");
-            const appointments = await appRes.json();
+            renderDoctorAvailabilityGrid();
+            if (isVerifiedDoctor) {
+                await loadDoctorAvailability();
+            }
+            updateCertificateStatus(certificate);
 
-            const statTotal = document.getElementById("doctor-stat-total");
-            const statPending = document.getElementById("doctor-stat-pending");
-            if (statTotal) statTotal.innerText = appointments.length;
-            if (statPending) statPending.innerText = appointments.filter(a => a.status === 'pending').length;
+            const dateInput = document.getElementById('doctor-appointments-date');
+            const selectedDate = dateInput ? normalizeISODateValue(dateInput.value) : '';
 
-            renderDoctorAppointments(appointments);
+            if (isVerifiedDoctor) {
+                // Load Appointments
+                const appRes = await fetch("/api/doctor/appointments");
+                const appointments = await appRes.json();
 
-            // Load Chats
-            const chatRes = await fetch("/api/admin/chats");
-            if (chatRes.ok) {
-                const chats = await chatRes.json();
-                const statChats = document.getElementById("doctor-stat-chats");
-                if (statChats) statChats.innerText = chats.length;
-                renderDoctorChats(chats);
+                const statTotal = document.getElementById("doctor-stat-total");
+                const statPending = document.getElementById("doctor-stat-pending");
+                if (statTotal) statTotal.innerText = appointments.length;
+                if (statPending) statPending.innerText = appointments.filter(a => a.status === 'pending').length;
+
+                await loadDoctorAppointmentsForDate(selectedDate);
+
+                // Load Chats
+                const chatRes = await fetch("/api/doctor/chats");
+                if (chatRes.ok) {
+                    const chats = await chatRes.json();
+                    const statChats = document.getElementById("doctor-stat-chats");
+                    if (statChats) statChats.innerText = chats.length;
+                    renderDoctorChats(chats);
+                }
             }
         }
     } catch (e) {
         console.error("Failed to load doctor data", e);
+    }
+}
+
+function renderDoctorAvailabilityGrid() {
+    const grid = document.getElementById('doctor-availability-grid');
+    if (!grid || grid.children.length) return;
+
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    days.forEach(day => {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-3 gap-2 items-center';
+        row.innerHTML = `
+            <div class="text-sm font-bold text-slate-700">${day}</div>
+            <input data-day="${day}" data-kind="start" placeholder="09:00" class="p-2 border border-slate-200 rounded-lg text-sm" />
+            <input data-day="${day}" data-kind="end" placeholder="17:00" class="p-2 border border-slate-200 rounded-lg text-sm" />
+        `;
+        grid.appendChild(row);
+    });
+}
+
+async function loadDoctorAvailability() {
+    try {
+        const res = await fetch('/api/doctor/availability');
+        const data = await res.json();
+        if (!Array.isArray(data)) return;
+
+        data.forEach(slot => {
+            const start = document.querySelector(`input[data-day="${slot.day_of_week}"][data-kind="start"]`);
+            const end = document.querySelector(`input[data-day="${slot.day_of_week}"][data-kind="end"]`);
+            if (start) start.value = slot.start_time;
+            if (end) end.value = slot.end_time;
+        });
+    } catch (e) {
+        console.error('Failed to load doctor availability', e);
+    }
+}
+
+function collectDoctorAvailability() {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const slots = [];
+    days.forEach(day => {
+        const start = document.querySelector(`input[data-day="${day}"][data-kind="start"]`)?.value?.trim();
+        const end = document.querySelector(`input[data-day="${day}"][data-kind="end"]`)?.value?.trim();
+        if (start && end) {
+            slots.push({ day_of_week: day, start_time: start, end_time: end });
+        }
+    });
+    return slots;
+}
+
+async function saveAvailability() {
+    const slots = collectDoctorAvailability();
+    try {
+        const res = await fetch('/api/doctor/availability', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slots })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Availability updated successfully.');
+            loadNotifications();
+        } else {
+            alert(data.error || 'Failed to update availability.');
+        }
+    } catch (e) {
+        alert('Failed to update availability.');
+    }
+}
+
+function updateCertificateStatus(certificate) {
+    const el = document.getElementById('doctor-cert-status');
+    if (!el) return;
+    if (!certificate || !certificate.status) {
+        el.innerText = 'No certificate uploaded yet. Please upload to get approved.';
+        return;
+    }
+    if (certificate.status === 'pending') {
+        el.innerText = 'Certificate pending admin review.';
+        return;
+    }
+    if (certificate.status === 'rejected') {
+        el.innerText = 'Certificate rejected. Please upload a new certificate.';
+        return;
+    }
+    el.innerText = `Latest certificate status: ${certificate.status.toUpperCase()}`;
+}
+
+async function uploadCertificate() {
+    const input = document.getElementById('doctor-certificate-file');
+    if (!input || !input.files || !input.files[0]) {
+        alert('Please select a certificate file first.');
+        return;
+    }
+
+    const form = new FormData();
+    form.append('certificate', input.files[0]);
+
+    try {
+        const res = await fetch('/api/doctor/certificate', {
+            method: 'POST',
+            body: form
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Certificate uploaded for admin verification.');
+            await loadDoctorData();
+            loadNotifications();
+        } else {
+            alert(data.error || 'Upload failed.');
+        }
+    } catch (e) {
+        alert('Upload failed.');
     }
 }
 
@@ -1088,11 +1524,15 @@ async function updateAppStatus(id, status) {
             body: JSON.stringify({ appointment_id: id, status: status })
         });
         const data = await res.json();
-        if (data.success) {
-            loadDoctorData();
+        if (!res.ok || !data.success) {
+            alert((data && data.error) || 'Failed to update appointment status.');
+            return;
         }
+        loadDoctorData();
+        loadNotifications();
     } catch (e) {
         console.error("Failed to update status", e);
+        alert('Failed to update appointment status.');
     }
 }
 
@@ -1122,9 +1562,9 @@ function renderDoctorChats(chats) {
                 </div>
             </div>
             <div class="p-4 bg-slate-50 rounded-2xl mb-4">
-                <p class="text-sm text-slate-600 italic">"${chat.last_msg.substring(0, 80)}${chat.last_msg.length > 80 ? '...' : ''}"</p>
+                <p class="text-sm text-slate-600 italic">"${(chat.last_msg || '').substring(0, 80)}${(chat.last_msg || '').length > 80 ? '...' : ''}"</p>
             </div>
-            <button onclick="viewChatDetails('${chat.session_id}')" class="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
+            <button onclick="viewChatHistory('${chat.session_id}', '${chat.patient_name || 'Patient'}')" class="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
                 View Chat History
             </button>
         </div>
