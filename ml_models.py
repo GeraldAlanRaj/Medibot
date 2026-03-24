@@ -1,6 +1,8 @@
 import os
 import json
 import pickle
+import re
+import requests # pyre-ignore[21]
 import numpy as np # pyre-ignore[21]
 import pandas as pd # pyre-ignore[21]
 import spacy # pyre-ignore[21]
@@ -22,8 +24,12 @@ class MLModels:
         # Load symptoms from CSV header
         df_cols = pd.read_csv(self.data_path, nrows=0).columns.tolist()
         self.symptoms_list = [c for c in df_cols if c != 'prognosis' and not c.startswith('Unnamed')]
+        self.training_df = self._load_training_df()
         
         self.red_flag_symptoms = ["chest pain", "chest_pain", "shortness of breath", "breathlessness", "severe bleeding", "loss of consciousness"]
+        self.red_flag_symptoms.extend([
+            "vomiting blood", "blood in stool", "severe dehydration", "stroke", "seizure"
+        ])
         
         # Mapping for common Hindi/other keywords to English symptom names
         self.cross_lang_map = {
@@ -33,8 +39,42 @@ class MLModels:
             "itching": "itching",
             "khujli": "itching",
             "खांसी": "cough",
-            "दर्द": "muscle_pain"
+            "दर्द": "muscle_pain",
+            "fiebre": "high_fever",
+            "dolor de cabeza": "headache",
+            "tos": "cough",
+            "fatiga": "fatigue",
+            "fièvre": "high_fever",
+            "maux de tête": "headache"
         }
+
+        # Never ask these in routine follow-ups unless user context clearly indicates sexual-risk triage.
+        self.sensitive_followup_symptoms = {
+            "extra_marital_contacts",
+            "patches_in_throat",
+            "muscle_wasting"
+        }
+
+        self.safe_generic_followups = [
+            "chills",
+            "cough",
+            "nausea",
+            "vomiting",
+            "fatigue",
+            "loss_of_appetite",
+            "joint_pain",
+            "stomach_pain",
+            "mild_fever"
+        ]
+
+        # Columns that are not direct symptoms should never be asked as follow-ups.
+        self.non_clinical_followup_symptoms = {
+            "family_history"
+        }
+
+        self.use_ollama = os.getenv('USE_OLLAMA', '0').lower() in ('1', 'true', 'yes')
+        self.ollama_url = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
+        self.ollama_model = os.getenv('OLLAMA_MODEL', 'llama3.1:8b')
         
         # Load Spacy
         self.nlp = self._setup_spacy()
@@ -75,6 +115,12 @@ class MLModels:
             subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
             return spacy.load("en_core_web_sm")
 
+    def _load_training_df(self):
+        df = pd.read_csv(self.data_path)
+        if 'Unnamed: 133' in df.columns:
+            df = df.drop('Unnamed: 133', axis=1)
+        return df
+
     def _init_rag(self):
         faiss_index_path = os.path.join(self.models_cache, "faiss_index")
         
@@ -84,7 +130,7 @@ class MLModels:
                 return FAISS.load_local(
                     faiss_index_path, 
                     self.embeddings, 
-                    allow_dangerous_deserialization=True
+                    allow_dangerous_deserialization=False
                 )
             except Exception as e:
                 print(f"Failed to load existing FAISS index: {e}. Rebuilding...")
@@ -123,14 +169,9 @@ class MLModels:
                 return pickle.load(f)
         else:
             print("Training Random Forest model on real dataset...")
-            df = pd.read_csv(self.data_path)
-            # Handle potential unnamed columns from CSV export
-            if 'Unnamed: 133' in df.columns:
-                df = df.drop('Unnamed: 133', axis=1)
-            
             # Ensure training data exactly matches the symptoms_list feature set
-            X = df[self.symptoms_list]
-            y = df['prognosis']
+            X = self.training_df[self.symptoms_list]
+            y = self.training_df['prognosis']
             
             clf = RandomForestClassifier(n_estimators=100, random_state=42)
             clf.fit(X, y)
@@ -150,10 +191,14 @@ class MLModels:
             "shortness of breath": "breathlessness",
             "loose motion": "diarrhoea",
             "loose stools": "diarrhoea",
+            "sore throat": "throat_irritation",
             "joint pain": "joint_pain",
             "muscle pain": "muscle_pain",
+            "body ache": "joint_pain",
+            "body pain": "joint_pain",
             "back pain": "back_pain",
             "stomach pain": "stomach_pain",
+            "mild fever": "mild_fever",
             "high fever": "high_fever",
         }
         # Apply phrase mappings first (longer matches)
@@ -166,25 +211,44 @@ class MLModels:
             "vomating": "vomiting",
             "vommit": "vomiting",
             "vomat": "vomiting",
+            "sneezing": "continuous_sneezing",
+            "sneeze": "continuous_sneezing",
             "cold": "continuous_sneezing",
             "headach": "headache",
             "fever": "high_fever",
         }
         for typo, correct in word_map.items():
+            if typo == "fever" and ("mild_fever" in str(text_lower) or "high_fever" in str(text_lower)):
+                continue
             # Only replace if the typo hasn't already been handled by phrase_map
             if str(typo) in str(text_lower) and str(correct) not in str(text_lower):
                 text_lower = str(text_lower).replace(str(typo), str(correct))
+
+        normalized_text = re.sub(r"\s+", " ", text_lower.replace("_", " ")).strip()
+
+        def is_negated(surface_form):
+            # Lightweight negation detection: ignore symptom if user says no/not/without/denies near it.
+            if re.search(rf"\b(?:but|however)\s+{re.escape(surface_form)}\b", normalized_text):
+                return False
+            neg_patterns = [
+                rf"\b(?:no|not|without|denies|deny|never)\b(?:\W+\w+){{0,3}}\W+{re.escape(surface_form)}\b",
+                rf"\b{re.escape(surface_form)}\b(?:\W+\w+){{0,3}}\W+\b(?:absent|none)\b",
+            ]
+            return any(re.search(pattern, normalized_text) for pattern in neg_patterns)
 
         # 1. Check English symptoms list
         for symptom in self.symptoms_list:
             # Match both underscore and space version
             symptom_space = str(symptom).replace("_", " ")
-            if str(symptom_space) in str(text_lower) or str(symptom) in str(text_lower):
+            symptom_pattern = rf"\b{re.escape(symptom_space)}\b"
+            if re.search(symptom_pattern, normalized_text):
+                if is_negated(symptom_space):
+                    continue
                 extracted.append(symptom)
                 
         # 2. Check Cross-language map
         for key, val in self.cross_lang_map.items():
-            if str(key) in str(text_lower):
+            if str(key) in str(normalized_text):
                 extracted.append(val)
                 
         return list(set(extracted))
@@ -211,44 +275,210 @@ class MLModels:
         
         return disease, confidence
 
-    def get_relevant_followups(self, current_symptoms):
+    def get_relevant_followups(self, current_symptoms, user_message="", excluded_symptoms=None):
         """
-        Suggests relevant follow-up symptoms based on the most likely disease
-        predicted from current symptoms.
+        Suggests relevant follow-up symptoms using weighted top-disease evidence,
+        while suppressing sensitive prompts for routine conversations.
         """
-        if not current_symptoms:
-            return [s.replace("_", " ") for s in self.symptoms_list[:3]]
-            
-        # Get the most likely disease
-        disease, _ = self.predict_disease(current_symptoms)
-        
-        # Find all symptoms associated with this disease in the training data
-        df = pd.read_csv(self.data_path)
-        disease_data = df[df['prognosis'] == disease]
-        
-        # Calculate frequency of each symptom for this disease
-        symptom_frequencies = disease_data[self.symptoms_list].mean()
-        
-        # Filter out symptoms already mentioned and sort by frequency
-        potential_followups = [
-            s for s in self.symptoms_list 
-            if s not in current_symptoms and symptom_frequencies[s] > 0
-        ]
-        
-        # Sort by frequency descending
-        potential_followups.sort(key=lambda s: symptom_frequencies[s], reverse=True)
-        
-        # Return top 3 relevant follow-up symptoms in readable format
-        return [s for i, s in enumerate(potential_followups) if i < 3]
+        excluded = set(excluded_symptoms or [])
 
-    def rag_answer(self, query):
-        docs = self.vector_store.similarity_search(query, k=3)
-        context = " ".join([d.page_content for d in docs])
-        
-        input_text = f"question: {query} context: {context}"
-        res = self.qa_pipeline(input_text, max_length=128)
-        
-        return f"Based on medical knowledge: {res[0]['generated_text']}"
+        if not current_symptoms:
+            return [
+                s for s in self.safe_generic_followups
+                if s in self.symptoms_list and s not in excluded
+            ][:3]
+
+        # Build feature frame for model inference.
+        features = np.zeros(len(self.symptoms_list))
+        for i, s in enumerate(self.symptoms_list):
+            if s in current_symptoms:
+                features[i] = 1
+        features_df = pd.DataFrame([features], columns=self.symptoms_list)
+
+        probs = self.rf_model.predict_proba(features_df)[0]
+        top_idx = np.argsort(probs)[::-1][:5]
+
+        df = self.training_df
+
+        symptom_scores = {
+            s: 0.0
+            for s in self.symptoms_list
+            if s not in current_symptoms and s not in excluded and s not in self.non_clinical_followup_symptoms
+        }
+        for idx in top_idx:
+            disease = self.rf_model.classes_[idx]
+            weight = float(probs[idx])
+            disease_data = df[df['prognosis'] == disease]
+            if disease_data.empty:
+                continue
+            symptom_frequencies = disease_data[self.symptoms_list].mean()
+            for symptom in symptom_scores:
+                symptom_scores[symptom] += float(symptom_frequencies[symptom]) * weight
+
+        ranked = [
+            s for s, score in sorted(symptom_scores.items(), key=lambda kv: kv[1], reverse=True)
+            if score > 0
+        ]
+
+        risk_text = (user_message or '').lower()
+        allow_sensitive = any(
+            token in risk_text
+            for token in ['hiv', 'aids', 'std', 'sti', 'sex', 'sexual', 'unprotected']
+        )
+
+        sanitized = []
+        # Prefer common non-alarming follow-ups first.
+        ranked_generic_first = [
+            s for s in ranked
+            if s in self.safe_generic_followups and s not in current_symptoms and s not in excluded and s not in self.non_clinical_followup_symptoms
+        ]
+
+        for symptom in ranked_generic_first:
+            if (symptom in self.sensitive_followup_symptoms) and not allow_sensitive:
+                continue
+            sanitized.append(symptom)
+            if len(sanitized) >= 3:
+                break
+
+        # Fallback to generic safe prompts if ranked candidates are sparse or filtered.
+        for symptom in self.safe_generic_followups:
+            if symptom in current_symptoms:
+                continue
+            if symptom in excluded:
+                continue
+            if symptom in self.non_clinical_followup_symptoms:
+                continue
+            if symptom not in self.symptoms_list:
+                continue
+            if symptom in sanitized:
+                continue
+            sanitized.append(symptom)
+            if len(sanitized) >= 3:
+                break
+
+        # Only if still insufficient, use broader ranked options.
+        for symptom in ranked:
+            if len(sanitized) >= 3:
+                break
+            if symptom in sanitized:
+                continue
+            if symptom in current_symptoms:
+                continue
+            if symptom in excluded:
+                continue
+            if symptom in self.non_clinical_followup_symptoms:
+                continue
+            if (symptom in self.sensitive_followup_symptoms) and not allow_sensitive:
+                continue
+            sanitized.append(symptom)
+
+        return sanitized[:3]
+
+    def rag_answer(self, query, language='en'):
+        lang = (language or 'en').lower()
+        language_names = {
+            'en': 'English',
+            'hi': 'Hindi',
+            'es': 'Spanish',
+            'fr': 'French',
+            'de': 'German',
+            'zh': 'Chinese',
+            'ja': 'Japanese',
+            'ar': 'Arabic'
+        }
+        localized = {
+            'en': {
+                'prefix': 'Based on medical knowledge:',
+                'sources': 'Sources',
+                'fallback': 'I could not derive enough detail. Please ask with more context (duration, severity, and age).'
+            },
+            'hi': {
+                'prefix': 'उपलब्ध चिकित्सीय जानकारी के आधार पर:',
+                'sources': 'स्रोत',
+                'fallback': 'मैं पर्याप्त विवरण नहीं निकाल सका। कृपया अधिक संदर्भ (अवधि, गंभीरता, आयु) के साथ पूछें।'
+            },
+            'es': {
+                'prefix': 'Según el conocimiento médico disponible:',
+                'sources': 'Fuentes',
+                'fallback': 'No pude obtener suficiente detalle. Consulte con más contexto (duración, gravedad y edad).'
+            },
+            'fr': {
+                'prefix': 'Selon les connaissances médicales disponibles :',
+                'sources': 'Sources',
+                'fallback': "Je n'ai pas pu obtenir assez de détails. Veuillez poser la question avec plus de contexte (durée, gravité, âge)."
+            },
+            'de': {
+                'prefix': 'Basierend auf verfügbarem medizinischem Wissen:',
+                'sources': 'Quellen',
+                'fallback': 'Ich konnte nicht genügend Details ableiten. Bitte fragen Sie mit mehr Kontext (Dauer, Schweregrad, Alter).'
+            },
+            'zh': {
+                'prefix': '根据现有医学知识：',
+                'sources': '参考来源',
+                'fallback': '我暂时无法提取足够细节。请提供更多上下文（持续时间、严重程度、年龄）后再提问。'
+            },
+            'ja': {
+                'prefix': '利用可能な医療知識に基づく回答:',
+                'sources': '情報源',
+                'fallback': '十分な詳細を導き出せませんでした。期間・重症度・年齢などの文脈を追加して質問してください。'
+            },
+            'ar': {
+                'prefix': 'بناءً على المعرفة الطبية المتاحة:',
+                'sources': 'المصادر',
+                'fallback': 'تعذر علي استخراج تفاصيل كافية. يرجى السؤال مع سياق أكثر (المدة، الشدة، العمر).'
+            }
+        }
+        locale = localized.get(lang, localized['en'])
+        answer_language = language_names.get(lang, 'English')
+
+        docs_with_scores = self.vector_store.similarity_search_with_score(query, k=5)
+        docs = [d for d, _score in docs_with_scores]
+        context = "\n\n".join([d.page_content for d in docs[:4]])
+        citations = []
+        for d, _score in docs_with_scores[:3]:
+            source = d.metadata.get('source') if d.metadata else None
+            if source:
+                citations.append(os.path.basename(source))
+        citations = list(dict.fromkeys(citations))
+
+        if self.use_ollama:
+            try:
+                prompt = (
+                    "You are a safe medical assistant. Provide a clear and practical answer. "
+                    "Use short sections: Overview, What to do now, Warning signs, When to see doctor. "
+                    f"Respond in {answer_language}.\n\n"
+                    f"Question: {query}\n"
+                    f"Context: {context}\n"
+                )
+                res = requests.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": self.ollama_model,
+                        "prompt": prompt,
+                        "stream": False
+                    },
+                    timeout=20
+                )
+                if res.ok:
+                    text = (res.json().get('response') or '').strip()
+                    if text:
+                        if citations:
+                            return f"{locale['prefix']}\n{text}\n\n{locale['sources']}: {', '.join(citations)}"
+                        return f"{locale['prefix']}\n{text}"
+            except Exception:
+                pass
+
+        input_text = (
+            f"answer in {answer_language} with practical steps and warning signs. "
+            f"question: {query} context: {context}"
+        )
+        res = self.qa_pipeline(input_text, max_length=220)
+        answer = (res[0].get('generated_text') or '').strip()
+        if len(answer) < 20:
+            answer = locale['fallback']
+        if citations:
+            return f"{locale['prefix']} {answer}\n\n{locale['sources']}: {', '.join(citations)}"
+        return f"{locale['prefix']} {answer}"
 
 # Singleton instance
 ml_models = MLModels()
