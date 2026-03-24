@@ -5,7 +5,17 @@ TRANSLATIONS = {
         "fallback": "I heard you say '{user_message}', but I couldn't identify any specific symptoms I recognize. Please try describing your physical feelings (e.g., 'I have a headache').",
         "clarifying": "I noted that you have {symptoms}. To give a better diagnosis, do you also experience any of these: {follow_ups}?",
         "prediction": "Based on your symptoms ({symptoms}), my predicted diagnosis is **{disease}** with {confidence}% confidence.\n\n*Disclaimer: I am an AI, not a doctor. Please consult a healthcare professional for accurate medical advice.*",
-        "searching": "Searching for medical information..."
+        "searching": "Searching for medical information...",
+        "negative_followup": "Thanks for confirming. Since those are not present, do you have any of these: {follow_ups}?",
+        "duration_prompt": "To improve accuracy, please tell me the duration of these symptoms (for example: since yesterday, 3 days, or 2 weeks).",
+        "more_details_prompt": "Thanks. Please share any additional symptom details (severity, timing, triggers) so I can improve the assessment.",
+        "severity_prompt": "Please also include symptom severity (mild/moderate/severe).",
+        "guarded_match": "Current best match based on available information is **{disease}** (confidence: {confidence}%). This is not final yet.\n\nTracked symptoms: {symptoms}.\nPlease continue sharing symptom progression for a safer conclusion.",
+        "triage_or_qa_prompt": "I can help in two ways:\n- Symptom triage: tell me your symptoms + duration\n- Medical Q&A: ask any health question and I will answer with evidence when available\n\nExample: 'I have sore throat and fever for 3 days'",
+        "details_recorded_prompt": "I've added those details. Is there anything else you'd like to share? Currently tracking: {symptoms}.",
+        "tracking_note": "I'm still keeping track of: {symptoms}.",
+        "recommended_specialist_line": "Recommended specialist: **{specialty}**.",
+        "doctors_you_can_book_now": "Doctors you can book now:"
     },
     "hi": {
         "greeting": "नमस्ते! मैं आपका एआई मेडिकल असिस्टेंट हूं। आप मुझे अपने लक्षण बता सकते हैं, या चिकित्सा प्रश्न पूछ सकते हैं। मैं आज आपकी कैसे मदद कर सकता हूँ?",
@@ -13,7 +23,17 @@ TRANSLATIONS = {
         "fallback": "मैंने आपको '{user_message}' कहते सुना, लेकिन मैं किसी विशेष लक्षण की पहचान नहीं कर सका जिसे मैं पहचानता हूं। कृपया अपनी शारीरिक भावनाओं का वर्णन करने का प्रयास करें (जैसे कि 'मुझे सिरदर्द है')।",
         "clarifying": "मैंने गौर किया कि आपको {symptoms} हैं। बेहतर निदान देने के लिए, क्या आप इनमें से किसी का भी अनुभव करते हैं: {follow_ups}?",
         "prediction": "आपके लक्षणों ({symptoms}) के आधार पर, मेरा अनुमानित निदान **{disease}** है जिसकी {confidence}% निश्चितता है।\n\n*अस्वीकरण: मैं एक एआई हूं, डॉक्टर नहीं। सटीक चिकित्सा सलाह के लिए कृपया किसी स्वास्थ्य देखभाल पेशेवर से परामर्श लें।*",
-        "searching": "चिकित्सा जानकारी खोजी जा रही है..."
+        "searching": "चिकित्सा जानकारी खोजी जा रही है...",
+        "negative_followup": "पुष्टि के लिए धन्यवाद। यदि ये लक्षण नहीं हैं, तो क्या इनमें से कोई है: {follow_ups}?",
+        "duration_prompt": "सटीकता बढ़ाने के लिए कृपया बताएं कि ये लक्षण कितने समय से हैं (जैसे: कल से, 3 दिन, या 2 हफ्ते)।",
+        "more_details_prompt": "धन्यवाद। कृपया गंभीरता, समय और ट्रिगर जैसी अतिरिक्त जानकारी साझा करें।",
+        "severity_prompt": "कृपया लक्षणों की गंभीरता भी बताएं (हल्का/मध्यम/गंभीर)।",
+        "guarded_match": "उपलब्ध जानकारी के आधार पर फिलहाल सबसे संभावित स्थिति **{disease}** है (विश्वास: {confidence}%)। यह अंतिम नहीं है।\n\nट्रैक किए गए लक्षण: {symptoms}.\nकृपया आगे के बदलाव साझा करें ताकि सुरक्षित निष्कर्ष मिल सके।",
+        "triage_or_qa_prompt": "मैं दो तरीकों से मदद कर सकता हूं:\n- लक्षण जाँच: अपने लक्षण और अवधि बताएं\n- मेडिकल प्रश्नोत्तर: कोई स्वास्थ्य प्रश्न पूछें, मैं उपलब्ध साक्ष्य के आधार पर उत्तर दूंगा\n\nउदाहरण: 'मुझे 3 दिनों से गले में खराश और बुखार है'",
+        "details_recorded_prompt": "मैंने ये विवरण जोड़ दिए हैं। क्या आप कुछ और साझा करना चाहेंगे? अभी ट्रैक हो रहा है: {symptoms}.",
+        "tracking_note": "मैं अभी भी इन लक्षणों को ट्रैक कर रहा हूं: {symptoms}.",
+        "recommended_specialist_line": "सुझावित विशेषज्ञ: **{specialty}**.",
+        "doctors_you_can_book_now": "अभी बुक करने के लिए उपलब्ध डॉक्टर:"
     },
     "es": {
         "greeting": "¡Hola! Soy su Asistente Médico de IA. Puede describirme sus síntomas o hacerme preguntas médicas. ¿Cómo puedo ayudarle hoy?",
@@ -21,7 +41,17 @@ TRANSLATIONS = {
         "fallback": "Le escuché decir '{user_message}', pero no pude identificar ningún síntoma específico que reconozca. Intente describir sus sensaciones físicas (por ejemplo, 'tengo dolor de cabeza').",
         "clarifying": "He notado que tiene {symptoms}. Para dar un mejor diagnóstico, ¿también experimenta alguno de estos: {follow_ups}?",
         "prediction": "Basado en sus síntomas ({symptoms}), mi diagnóstico predicho es **{disease}** con un {confidence}% de confianza.\n\n*Descargo de responsabilidad: Soy una IA, no un médico. Consulte a un profesional de la salud para obtener un asesoramiento médico preciso.*",
-        "searching": "Buscando información médica..."
+        "searching": "Buscando información médica...",
+        "negative_followup": "Gracias por confirmar. Si esos no están presentes, ¿tiene alguno de estos: {follow_ups}?",
+        "duration_prompt": "Para mejorar la precisión, indique la duración de estos síntomas (por ejemplo: desde ayer, 3 días o 2 semanas).",
+        "more_details_prompt": "Gracias. Comparta más detalles (intensidad, horario y desencadenantes) para mejorar la evaluación.",
+        "severity_prompt": "Incluya también la intensidad del síntoma (leve/moderada/severa).",
+        "guarded_match": "La mejor coincidencia actual según la información disponible es **{disease}** (confianza: {confidence}%). Aún no es un resultado final.\n\nSíntomas registrados: {symptoms}.\nComparta la evolución para una conclusión más segura.",
+        "triage_or_qa_prompt": "Puedo ayudar de dos formas:\n- Triaje de síntomas: indique síntomas y duración\n- Preguntas médicas: pregunte y responderé con evidencia cuando esté disponible\n\nEjemplo: 'Tengo dolor de garganta y fiebre desde hace 3 días'",
+        "details_recorded_prompt": "He añadido esos detalles. ¿Desea compartir algo más? Actualmente registro: {symptoms}.",
+        "tracking_note": "Sigo registrando: {symptoms}.",
+        "recommended_specialist_line": "Especialista recomendado: **{specialty}**.",
+        "doctors_you_can_book_now": "Doctores que puede reservar ahora:"
     },
     "fr": {
         "greeting": "Bonjour ! Je suis votre Assistant Médical IA. Vous pouvez me décrire vos symptômes ou me poser des questions médicales. Comment puis-je vous aider aujourd'hui ?",
@@ -29,7 +59,17 @@ TRANSLATIONS = {
         "fallback": "Je vous ai entendu dire '{user_message}', mais je n'ai identifié aucun symptôme spécifique que je reconnais. Essayez de décrire vos sensations physiques (par exemple, 'j'ai mal à la tête').",
         "clarifying": "J'ai noté que vous avez {symptoms}. Pour donner un meilleur diagnostic, ressentez-vous également l'un de ceux-ci : {follow_ups} ?",
         "prediction": "D'après vos symptômes ({symptoms}), mon diagnostic prédit est **{disease}** avec une confiance de {confidence}%.\n\n*Avertissement : Je suis une IA, pas un médecin. Veuillez consulter un professionnel de la santé pour des conseils médicaux précis.*",
-        "searching": "Recherche d'informations médicales..."
+        "searching": "Recherche d'informations médicales...",
+        "negative_followup": "Merci pour la confirmation. Si ces symptômes sont absents, avez-vous l'un de ceux-ci : {follow_ups} ?",
+        "duration_prompt": "Pour améliorer la précision, indiquez la durée de ces symptômes (par exemple : depuis hier, 3 jours ou 2 semaines).",
+        "more_details_prompt": "Merci. Partagez des détails supplémentaires (intensité, moment, déclencheurs) pour affiner l'évaluation.",
+        "severity_prompt": "Veuillez aussi préciser la gravité (léger/modéré/sévère).",
+        "guarded_match": "La correspondance actuelle la plus probable est **{disease}** (confiance : {confidence}%). Ce n'est pas encore final.\n\nSymptômes suivis : {symptoms}.\nVeuillez partager l'évolution pour une conclusion plus sûre.",
+        "triage_or_qa_prompt": "Je peux aider de deux façons :\n- Triage des symptômes : indiquez vos symptômes et leur durée\n- Questions médicales : posez une question santé, je répondrai avec des preuves disponibles\n\nExemple : 'J'ai mal à la gorge et de la fièvre depuis 3 jours'",
+        "details_recorded_prompt": "J'ai ajouté ces détails. Souhaitez-vous partager autre chose ? Suivi actuel : {symptoms}.",
+        "tracking_note": "Je continue de suivre : {symptoms}.",
+        "recommended_specialist_line": "Spécialiste recommandé : **{specialty}**.",
+        "doctors_you_can_book_now": "Médecins que vous pouvez réserver maintenant :"
     },
     "de": {
         "greeting": "Hallo! Ich bin Ihr KI-Medizinassistent. Sie können mir Ihre Symptome beschreiben oder medizinische Fragen stellen. Wie kann ich Ihnen heute helfen?",
@@ -37,7 +77,17 @@ TRANSLATIONS = {
         "fallback": "Ich habe Sie '{user_message}' sagen hören, aber ich konnte keine spezifischen Symptome identifizieren, die ich erkenne. Bitte versuchen Sie, Ihr körperliches Befinden zu beschreiben (z. B. 'Ich habe Kopfschmerzen').",
         "clarifying": "Ich habe festgestellt, dass Sie {symptoms} haben. Um eine bessere Diagnose zu stellen, treten bei Ihnen auch diese auf: {follow_ups}?",
         "prediction": "Basierend auf Ihren Symptomen ({symptoms}) ist meine vorhergesagte Diagnose **{disease}** mit einer Konfidenz von {confidence}%.\n\n*Haftungsausschluss: Ich bin eine KI, kein Arzt. Bitte konsultieren Sie einen Arzt für genaue medizinische Beratung.*",
-        "searching": "Suche nach medizinischen Informationen..."
+        "searching": "Suche nach medizinischen Informationen...",
+        "negative_followup": "Danke für die Bestätigung. Falls diese nicht vorliegen: Haben Sie eines davon: {follow_ups}?",
+        "duration_prompt": "Für bessere Genauigkeit nennen Sie bitte die Dauer dieser Symptome (z. B. seit gestern, 3 Tage oder 2 Wochen).",
+        "more_details_prompt": "Danke. Bitte teilen Sie weitere Details (Schweregrad, Zeitpunkt, Auslöser) mit.",
+        "severity_prompt": "Bitte geben Sie auch den Schweregrad an (leicht/mittel/schwer).",
+        "guarded_match": "Die aktuell wahrscheinlichste Übereinstimmung ist **{disease}** (Konfidenz: {confidence}%). Das ist noch nicht endgültig.\n\nErfasste Symptome: {symptoms}.\nBitte teilen Sie den Verlauf für ein sichereres Ergebnis mit.",
+        "triage_or_qa_prompt": "Ich kann auf zwei Arten helfen:\n- Symptom-Triage: Nennen Sie Symptome und Dauer\n- Medizinische Q&A: Stellen Sie eine Gesundheitsfrage, ich antworte evidenzbasiert\n\nBeispiel: 'Ich habe seit 3 Tagen Halsschmerzen und Fieber'",
+        "details_recorded_prompt": "Ich habe diese Details hinzugefügt. Möchten Sie noch etwas teilen? Derzeit erfasst: {symptoms}.",
+        "tracking_note": "Ich erfasse weiterhin: {symptoms}.",
+        "recommended_specialist_line": "Empfohlener Facharzt: **{specialty}**.",
+        "doctors_you_can_book_now": "Diese Ärzte können Sie jetzt buchen:"
     },
     "zh": {
         "greeting": "您好！我是您的 AI 医疗助手。您可以向我描述您的症状，或咨询医学问题。今天我能为您做些什么？",
@@ -45,7 +95,17 @@ TRANSLATIONS = {
         "fallback": "我听到您说“{user_message}”，但我无法识别任何我认识的特定症状。请尝试描述您的身体感受（例如，“我头痛”）。",
         "clarifying": "我注意到您有 {symptoms}。为了给出更好的诊断，您是否也有这些症状：{follow_ups}？",
         "prediction": "根据您的症状（{symptoms}），我的预测诊断是 **{disease}**，置信度为 {confidence}%。\n\n*免责声明：我是人工智能，不是医生。请咨询医疗专业人员以获取准确的医疗建议。*",
-        "searching": "正在搜索医疗信息..."
+        "searching": "正在搜索医疗信息...",
+        "negative_followup": "感谢确认。如果这些都没有，您是否有以下任一症状：{follow_ups}？",
+        "duration_prompt": "为提高准确性，请说明这些症状持续了多久（例如：从昨天开始、3天、或2周）。",
+        "more_details_prompt": "感谢。请补充更多细节（严重程度、出现时间、诱因）以提升评估准确性。",
+        "severity_prompt": "也请说明严重程度（轻度/中度/重度）。",
+        "guarded_match": "根据现有信息，当前最可能的是 **{disease}**（置信度：{confidence}%）。这还不是最终结论。\n\n已跟踪症状：{symptoms}。\n请继续提供变化情况以获得更安全的结论。",
+        "triage_or_qa_prompt": "我可以通过两种方式帮助您：\n- 症状分诊：告诉我症状和持续时间\n- 医疗问答：提出健康问题，我会基于可用证据回答\n\n示例：‘我喉咙痛并发烧3天了’",
+        "details_recorded_prompt": "我已记录这些细节。您还想补充什么吗？当前跟踪：{symptoms}。",
+        "tracking_note": "我仍在跟踪：{symptoms}。",
+        "recommended_specialist_line": "建议专科：**{specialty}**。",
+        "doctors_you_can_book_now": "您现在可以预约的医生："
     },
     "ja": {
         "greeting": "こんにちは！私はあなたのAI医療アシスタントです。症状を説明したり、医学的な質問をしたりできます。今日はどのようにお手伝いしましょうか？",
@@ -53,7 +113,17 @@ TRANSLATIONS = {
         "fallback": "「{user_message}」とおっしゃるのが聞こえましたが、認識できる特定の症状を特定できませんでした。身体的な感覚（例：「頭痛がする」など）を説明してみてください。",
         "clarifying": "{symptoms}があるとのことですね。より良い診断を行うために、これらも経験していますか：{follow_ups}？",
         "prediction": "あなたの症状（{symptoms}）に基づくと、私の予測される診断は **{disease}** であり、信頼度は {confidence}% です。\n\n*免责事項: 私は医師ではなくAIです。正確な医学的アドバイスについては、医療専門家にご相談ください。*",
-        "searching": "医療情報を検索中..."
+        "searching": "医療情報を検索中...",
+        "negative_followup": "確認ありがとうございます。これらが当てはまらない場合、次の症状はありますか：{follow_ups}？",
+        "duration_prompt": "精度向上のため、症状の期間を教えてください（例：昨日から、3日、2週間）。",
+        "more_details_prompt": "ありがとうございます。重症度・時間帯・誘因などの追加情報を共有してください。",
+        "severity_prompt": "重症度も教えてください（軽度/中等度/重度）。",
+        "guarded_match": "現時点で最も可能性が高いのは **{disease}**（信頼度：{confidence}%）です。これは最終結果ではありません。\n\n追跡中の症状：{symptoms}。\nより安全な結論のため、経過を共有してください。",
+        "triage_or_qa_prompt": "次の2つの方法で支援できます：\n- 症状トリアージ：症状と期間を教えてください\n- 医療Q&A：健康に関する質問に、利用可能な根拠で回答します\n\n例：『喉の痛みと発熱が3日続いています』",
+        "details_recorded_prompt": "詳細を記録しました。ほかに共有したいことはありますか？現在の追跡：{symptoms}。",
+        "tracking_note": "引き続き追跡中：{symptoms}。",
+        "recommended_specialist_line": "推奨専門科：**{specialty}**。",
+        "doctors_you_can_book_now": "今すぐ予約できる医師："
     },
     "ar": {
         "greeting": "مرحباً! أنا مساعدك الطبي القائم على الذكاء الاصطناعي. يمكنك وصف أعراضك لي، أو طرح أسئلة طبية. كيف يمكنني مساعدتك اليوم؟",
@@ -61,7 +131,17 @@ TRANSLATIONS = {
         "fallback": "لقد سمعتك تقول '{user_message}'، لكنني لم أتمكن من تحديد أي أعراض محددة أتعرف عليها. يرجى محاولة وصف مشاعرك الجسدية (مثل 'أشعر بصداع').",
         "clarifying": "لقد لاحظت أن لديك {symptoms}. لتقديم تشخيص أفضل، هل تعاني أيضاً من أي من هذه: {follow_ups}؟",
         "prediction": "بناءً على أعراضك ({symptoms})، فإن تشخيصي المتوقع هو **{disease}** بثقة {confidence}%.\n\n*تنبيه: أنا ذكاء اصطناعي، لست طبيباً. يرجى استشارة مختص رعاية صحية للحصول على نصيحة طبية دقيقة.*",
-        "searching": "البحث عن المعلومات الطبية..."
+        "searching": "البحث عن المعلومات الطبية...",
+        "negative_followup": "شكراً للتأكيد. إذا لم تكن هذه الأعراض موجودة، فهل لديك أي من التالي: {follow_ups}؟",
+        "duration_prompt": "لتحسين الدقة، يرجى ذكر مدة هذه الأعراض (مثلاً: منذ أمس، 3 أيام، أو أسبوعين).",
+        "more_details_prompt": "شكراً. شارك مزيداً من التفاصيل (الشدة، التوقيت، المحفزات) لتحسين التقييم.",
+        "severity_prompt": "يرجى أيضاً توضيح الشدة (خفيف/متوسط/شديد).",
+        "guarded_match": "أفضل تطابق حالياً بناءً على المعلومات المتاحة هو **{disease}** (الثقة: {confidence}%). هذه ليست نتيجة نهائية بعد.\n\nالأعراض المتتبعة: {symptoms}.\nيرجى متابعة مشاركة تطور الأعراض للحصول على نتيجة أكثر أماناً.",
+        "triage_or_qa_prompt": "يمكنني المساعدة بطريقتين:\n- فرز الأعراض: اذكر الأعراض والمدة\n- أسئلة طبية: اسأل أي سؤال صحي وسأجيب بناءً على الأدلة المتاحة\n\nمثال: 'لدي التهاب حلق وحمى منذ 3 أيام'",
+        "details_recorded_prompt": "تمت إضافة هذه التفاصيل. هل ترغب في مشاركة شيء آخر؟ الجاري تتبعه: {symptoms}.",
+        "tracking_note": "ما زلت أتابع: {symptoms}.",
+        "recommended_specialist_line": "التخصص الموصى به: **{specialty}**.",
+        "doctors_you_can_book_now": "الأطباء المتاحون للحجز الآن:"
     }
 }
 
