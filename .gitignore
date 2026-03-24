@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+venv/
+.env/
+
+# Database files
+*.db
+
+# ML models / binaries
+*.pkl
+models/
+*.pt
+*.bin
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+
+# Cookies / sessions (IMPORTANT)
+cookies.txt
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+
+#dataset
+data
