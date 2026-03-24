@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import math
 from geopy.geocoders import Nominatim # pyre-ignore[21]
@@ -42,6 +42,9 @@ def init_db():
         c.execute('ALTER TABLE patient_info ADD COLUMN location TEXT')
         c.execute('ALTER TABLE patient_info ADD COLUMN lat REAL')
         c.execute('ALTER TABLE patient_info ADD COLUMN lon REAL')
+    except: pass
+    try:
+        c.execute('ALTER TABLE patient_info ADD COLUMN gender TEXT')
     except: pass
 
     c.execute('''
@@ -98,11 +101,15 @@ def init_db():
             FOREIGN KEY (doctor_id) REFERENCES doctors (id)
         )
     ''')
+    try:
+        c.execute('ALTER TABLE appointments ADD COLUMN created_at TIMESTAMP')
+    except: pass
     c.execute('''
         CREATE TABLE IF NOT EXISTS patient_info (
             user_id INTEGER PRIMARY KEY,
             full_name TEXT,
             age INTEGER,
+            gender TEXT,
             email TEXT,
             phone TEXT,
             location TEXT,
@@ -110,6 +117,33 @@ def init_db():
             lon REAL,
             medical_history TEXT,
             FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            title TEXT,
+            message TEXT,
+            type TEXT,
+            is_read INTEGER DEFAULT 0,
+            metadata TEXT,
+            created_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS doctor_certificates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            file_path TEXT,
+            status TEXT DEFAULT 'pending',
+            notes TEXT,
+            reviewed_by INTEGER,
+            uploaded_at TIMESTAMP,
+            reviewed_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (reviewed_by) REFERENCES users (id)
         )
     ''')
     
@@ -141,7 +175,12 @@ def geocode_address(address):
 def get_doctors():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, name, specialty, rating, location, lat, lon, image_url FROM doctors WHERE user_id IS NOT NULL')
+    c.execute('''
+        SELECT d.id, d.name, d.specialty, d.rating, d.location, d.lat, d.lon, d.image_url
+        FROM doctors d
+        JOIN users u ON d.user_id = u.id
+        WHERE u.role = 'doctor' AND u.is_verified = 1 AND u.is_blocked = 0
+    ''')
     rows = c.fetchall()
     conn.close()
     return [
@@ -151,6 +190,20 @@ def get_doctors():
         }
         for r in rows
     ]
+
+
+def is_doctor_verified(doctor_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT 1
+        FROM doctors d
+        JOIN users u ON d.user_id = u.id
+        WHERE d.id = ? AND u.role = 'doctor' AND u.is_verified = 1 AND u.is_blocked = 0
+    ''', (doctor_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row)
 
 import math
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -174,13 +227,111 @@ def get_nearby_doctors(lat, lon, radius_km=50):
             nearby.append(doc)
     return sorted(nearby, key=lambda x: x['distance'])
 
+
+def _parse_appointment_time(raw_time):
+    if not raw_time:
+        return None
+
+    normalized = str(raw_time).strip().replace('Z', '')
+    try:
+        dt = datetime.fromisoformat(normalized)
+        return dt.replace(second=0, microsecond=0)
+    except ValueError:
+        pass
+
+    for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M'):
+        try:
+            return datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+    return None
+
 def book_appointment(session_id, doctor_id, time):
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute('INSERT INTO appointments (session_id, doctor_id, appointment_time) VALUES (?, ?, ?)',
-              (session_id, doctor_id, time))
+
+    # Only approved, active doctors can be booked.
+    c.execute('''
+        SELECT d.id
+        FROM doctors d
+        JOIN users u ON d.user_id = u.id
+        WHERE d.id = ? AND u.role = 'doctor' AND u.is_verified = 1 AND u.is_blocked = 0
+    ''', (doctor_id,))
+    if not c.fetchone():
+        conn.close()
+        raise ValueError('Doctor is not available for booking.')
+
+    appointment_dt = _parse_appointment_time(time)
+    if not appointment_dt:
+        conn.close()
+        raise ValueError('Invalid appointment time format.')
+
+    if appointment_dt < datetime.now().replace(second=0, microsecond=0):
+        conn.close()
+        raise ValueError('Cannot book an appointment in the past.')
+
+    normalized_time = appointment_dt.strftime('%Y-%m-%dT%H:%M')
+
+    # Enforce booking inside declared doctor availability windows.
+    date_key = appointment_dt.strftime('%Y-%m-%d')
+    free_day_slots = get_doctor_free_slots(doctor_id, start_date=date_key, days_ahead=1)
+    allowed_slots = set()
+    for row in free_day_slots:
+        if row.get('date') == date_key:
+            allowed_slots.update(row.get('slots') or [])
+    if normalized_time not in allowed_slots:
+        conn.close()
+        raise ValueError('Selected slot is outside doctor availability or already booked.')
+
+    # Enforce patient clash checks across all doctors/sessions.
+    c.execute('SELECT user_id FROM sessions WHERE session_id = ?', (session_id,))
+    session_row = c.fetchone()
+    if not session_row or not session_row['user_id']:
+        conn.close()
+        raise ValueError('Invalid patient session. Please log in again.')
+
+    patient_user_id = session_row['user_id']
+    c.execute('''
+        SELECT a.id
+        FROM appointments a
+        JOIN sessions s ON a.session_id = s.session_id
+        WHERE s.user_id = ?
+          AND a.appointment_time = ?
+          AND a.status IN ('pending', 'accepted')
+    ''', (patient_user_id, normalized_time))
+    if c.fetchone():
+        conn.close()
+        raise ValueError('You already have another appointment at this time.')
+
+    # Avoid duplicate booking by same patient-session.
+    c.execute('''
+        SELECT id FROM appointments
+        WHERE session_id = ? AND doctor_id = ? AND appointment_time = ?
+          AND status IN ('pending', 'accepted')
+    ''', (session_id, doctor_id, normalized_time))
+    if c.fetchone():
+        conn.close()
+        raise ValueError('You already have this appointment booked.')
+
+    # Avoid double-booking a doctor slot.
+    c.execute('''
+        SELECT id FROM appointments
+        WHERE doctor_id = ? AND appointment_time = ?
+          AND status IN ('pending', 'accepted')
+    ''', (doctor_id, normalized_time))
+    if c.fetchone():
+        conn.close()
+        raise ValueError('This slot is no longer available. Please choose another slot.')
+
+    c.execute('''
+        INSERT INTO appointments (session_id, doctor_id, appointment_time, status, created_at)
+        VALUES (?, ?, ?, 'pending', ?)
+    ''', (session_id, doctor_id, normalized_time, datetime.now()))
+    appointment_id = c.lastrowid
     conn.commit()
     conn.close()
+    return appointment_id
 
 def get_doctor_profile(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -190,6 +341,15 @@ def get_doctor_profile(user_id):
     row = c.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_doctor_user_id(doctor_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT user_id FROM doctors WHERE id = ?', (doctor_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
 
 def save_doctor_profile(user_id, data):
     name = data.get('name')
@@ -223,24 +383,71 @@ def save_doctor_profile(user_id, data):
     conn.commit()
     conn.close()
 
-def get_doctor_appointments(doctor_id):
+def get_doctor_appointments(doctor_id, date_filter=None):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    # Join with patient_info if possible, but appointments currently uses session_id
-    # We'll need to join sessions to get user_id, then patient_info
-    c.execute('''
+    query = '''
         SELECT a.*, COALESCE(p.full_name, u.username) as patient_name, p.phone as patient_phone
         FROM appointments a
         JOIN sessions s ON a.session_id = s.session_id
         JOIN users u ON s.user_id = u.id
         LEFT JOIN patient_info p ON s.user_id = p.user_id
         WHERE a.doctor_id = ?
-        ORDER BY a.appointment_time DESC
+    '''
+    params = [doctor_id]
+    if date_filter:
+        query += ' AND a.appointment_time LIKE ?'
+        params.append(f"{date_filter}%")
+    query += ' ORDER BY a.appointment_time DESC'
+
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_doctor_chats(doctor_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT
+            a.session_id,
+            COALESCE(p.full_name, u.username) AS patient_name,
+            COUNT(m.id) AS msg_count,
+            COALESCE((
+                SELECT m2.content
+                FROM messages m2
+                WHERE m2.session_id = a.session_id
+                ORDER BY m2.timestamp DESC
+                LIMIT 1
+            ), '') AS last_msg,
+            MAX(a.created_at) AS latest_booking
+        FROM appointments a
+        JOIN sessions s ON a.session_id = s.session_id
+        JOIN users u ON s.user_id = u.id
+        LEFT JOIN patient_info p ON s.user_id = p.user_id
+        LEFT JOIN messages m ON m.session_id = a.session_id
+        WHERE a.doctor_id = ?
+        GROUP BY a.session_id, patient_name
+        ORDER BY latest_booking DESC
     ''', (doctor_id,))
     rows = c.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def doctor_can_access_session(doctor_id, session_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        'SELECT 1 FROM appointments WHERE doctor_id = ? AND session_id = ? LIMIT 1',
+        (doctor_id, session_id)
+    )
+    row = c.fetchone()
+    conn.close()
+    return bool(row)
 
 def update_appointment_status(appointment_id, status):
     conn = sqlite3.connect(DB_PATH)
@@ -248,6 +455,157 @@ def update_appointment_status(appointment_id, status):
     c.execute('UPDATE appointments SET status = ? WHERE id = ?', (status, appointment_id))
     conn.commit()
     conn.close()
+
+
+def get_appointment_by_id(appointment_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM appointments WHERE id = ?', (appointment_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_id_by_session(session_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT user_id FROM sessions WHERE session_id = ?', (session_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def get_patient_appointments(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT a.id, a.session_id, a.doctor_id, a.appointment_time, a.status,
+               d.name AS doctor_name, d.specialty, d.location
+        FROM appointments a
+        JOIN sessions s ON a.session_id = s.session_id
+        JOIN doctors d ON a.doctor_id = d.id
+        WHERE s.user_id = ?
+        ORDER BY a.appointment_time DESC
+    ''', (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_doctor_availability(doctor_id, slots):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM doctor_availability WHERE doctor_id = ?', (doctor_id,))
+
+    for slot in slots:
+        day_of_week = slot.get('day_of_week')
+        start_time = slot.get('start_time')
+        end_time = slot.get('end_time')
+        if not day_of_week or not start_time or not end_time:
+            continue
+        c.execute('''
+            INSERT INTO doctor_availability (doctor_id, day_of_week, start_time, end_time)
+            VALUES (?, ?, ?, ?)
+        ''', (doctor_id, day_of_week, start_time, end_time))
+
+    conn.commit()
+    conn.close()
+
+
+def get_doctor_availability(doctor_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT day_of_week, start_time, end_time
+        FROM doctor_availability
+        WHERE doctor_id = ?
+        ORDER BY day_of_week, start_time
+    ''', (doctor_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _half_hour_slots_for_window(date_obj, start_time, end_time):
+    slots = []
+    try:
+        start_dt = datetime.strptime(f"{date_obj.strftime('%Y-%m-%d')} {start_time}", '%Y-%m-%d %H:%M')
+        end_dt = datetime.strptime(f"{date_obj.strftime('%Y-%m-%d')} {end_time}", '%Y-%m-%d %H:%M')
+    except ValueError:
+        return slots
+
+    current = start_dt
+    while current < end_dt:
+        slots.append(current.strftime('%Y-%m-%dT%H:%M'))
+        current += timedelta(minutes=30)
+    return slots
+
+
+def get_doctor_free_slots(doctor_id, start_date=None, days_ahead=7):
+    availability = get_doctor_availability(doctor_id)
+    if not availability:
+        # Fallback schedule so newly approved doctors are still bookable before
+        # they configure custom availability in their dashboard.
+        availability = [
+            {'day_of_week': day, 'start_time': '09:00', 'end_time': '17:00'}
+            for day in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+        ]
+
+    base_date = datetime.now().date() if not start_date else datetime.strptime(start_date, '%Y-%m-%d').date()
+    now_floor = datetime.now().replace(second=0, microsecond=0)
+
+    by_day = {}
+    for row in availability:
+        by_day.setdefault(row['day_of_week'].lower(), []).append(row)
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    output = []
+
+    for i in range(days_ahead):
+        d = base_date + timedelta(days=i)
+        weekday = d.strftime('%A').lower()
+        windows = by_day.get(weekday, [])
+        if not windows:
+            continue
+
+        all_slots = []
+        for w in windows:
+            all_slots.extend(_half_hour_slots_for_window(d, w['start_time'], w['end_time']))
+
+        if not all_slots:
+            continue
+
+        c.execute('''
+            SELECT appointment_time
+            FROM appointments
+            WHERE doctor_id = ?
+              AND status IN ('pending', 'accepted')
+              AND appointment_time LIKE ?
+        ''', (doctor_id, f"{d.strftime('%Y-%m-%d')}%"))
+        booked = {row[0][:16] for row in c.fetchall() if row[0]}
+
+        free_slots = []
+        for slot in sorted(set(all_slots)):
+            if slot in booked:
+                continue
+            # Don't expose past slots in the picker.
+            try:
+                slot_dt = datetime.strptime(slot, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                continue
+            if slot_dt < now_floor:
+                continue
+            free_slots.append(slot)
+
+        if free_slots:
+            output.append({'date': d.strftime('%Y-%m-%d'), 'slots': free_slots})
+
+    conn.close()
+    return output
 
 
 def get_session_analytics(session_id):
@@ -266,12 +624,16 @@ def get_session_analytics(session_id):
     # Count messages
     c.execute('SELECT COUNT(*) FROM messages WHERE session_id = ?', (session_id,))
     message_count = c.fetchone()[0]
+
+    c.execute('SELECT COUNT(*) FROM appointments WHERE session_id = ?', (session_id,))
+    appointment_count = c.fetchone()[0]
     
     conn.close()
     
     return {
         'symptom_count': len(set(all_symptoms)),
         'message_count': message_count,
+        'appointment_count': appointment_count,
         'unique_symptoms': list(set(all_symptoms))
     }
 
@@ -292,21 +654,41 @@ def create_user(username, password_hash, role):
 def get_user_by_username(username):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, username, password_hash, role FROM users WHERE username = ?', (username,))
+    c.execute('''
+        SELECT id, username, password_hash, role, is_verified, is_blocked
+        FROM users WHERE username = ?
+    ''', (username,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {'id': row[0], 'username': row[1], 'password_hash': row[2], 'role': row[3]}
+        return {
+            'id': row[0],
+            'username': row[1],
+            'password_hash': row[2],
+            'role': row[3],
+            'is_verified': bool(row[4]),
+            'is_blocked': bool(row[5])
+        }
     return None
 
 def get_user_by_id(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, username, password_hash, role FROM users WHERE id = ?', (user_id,))
+    c.execute('''
+        SELECT id, username, password_hash, role, is_verified, is_blocked
+        FROM users WHERE id = ?
+    ''', (user_id,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {'id': row[0], 'username': row[1], 'password_hash': row[2], 'role': row[3]}
+        return {
+            'id': row[0],
+            'username': row[1],
+            'password_hash': row[2],
+            'role': row[3],
+            'is_verified': bool(row[4]),
+            'is_blocked': bool(row[5])
+        }
     return None
 
 def create_session(session_id, user_id=None):
@@ -326,31 +708,197 @@ def save_patient_info(user_id, info):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT OR REPLACE INTO patient_info (user_id, full_name, age, email, phone, location, lat, lon, medical_history)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (user_id, info['full_name'], info.get('age'), info['email'], info['phone'], 
-          info.get('location'), lat, lon, info['medical_history']))
+        INSERT OR REPLACE INTO patient_info (
+            user_id, full_name, age, gender, email, phone, location, lat, lon, medical_history
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        user_id,
+        info.get('full_name'),
+        info.get('age'),
+        info.get('gender'),
+        info.get('email'),
+        info.get('phone'),
+        info.get('location'),
+        lat,
+        lon,
+        info.get('medical_history')
+    ))
     conn.commit()
     conn.close()
 
 def get_patient_info(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT full_name, age, email, phone, location, lat, lon, medical_history FROM patient_info WHERE user_id = ?', (user_id,))
+    c.execute('''
+        SELECT full_name, age, gender, email, phone, location, lat, lon, medical_history
+        FROM patient_info WHERE user_id = ?
+    ''', (user_id,))
     row = c.fetchone()
     conn.close()
     if row:
         return {
             'full_name': row[0],
             'age': row[1],
-            'email': row[2],
-            'phone': row[3],
-            'location': row[4],
-            'lat': row[5],
-            'lon': row[6],
-            'medical_history': row[7]
+            'gender': row[2],
+            'email': row[3],
+            'phone': row[4],
+            'location': row[5],
+            'lat': row[6],
+            'lon': row[7],
+            'medical_history': row[8]
         }
     return None
+
+
+def create_notification(user_id, title, message, ntype='info', metadata=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    metadata_json = json.dumps(metadata) if metadata is not None else None
+    c.execute('''
+        INSERT INTO notifications (user_id, title, message, type, is_read, metadata, created_at)
+        VALUES (?, ?, ?, ?, 0, ?, ?)
+    ''', (user_id, title, message, ntype, metadata_json, datetime.now()))
+    conn.commit()
+    notification_id = c.lastrowid
+    conn.close()
+    return notification_id
+
+
+def get_notifications(user_id, unread_only=False, limit=100):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    if unread_only:
+        c.execute('''
+            SELECT id, title, message, type, is_read, metadata, created_at
+            FROM notifications
+            WHERE user_id = ? AND is_read = 0
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (user_id, limit))
+    else:
+        c.execute('''
+            SELECT id, title, message, type, is_read, metadata, created_at
+            FROM notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (user_id, limit))
+    rows = c.fetchall()
+    conn.close()
+
+    notifications = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item['metadata'] = json.loads(item['metadata']) if item.get('metadata') else None
+        except Exception:
+            item['metadata'] = None
+        notifications.append(item)
+    return notifications
+
+
+def get_unread_notification_count(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0', (user_id,))
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+
+def mark_notification_read(notification_id, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', (notification_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+def mark_all_notifications_read(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE notifications SET is_read = 1 WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def save_doctor_certificate(user_id, file_path):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO doctor_certificates (user_id, file_path, status, uploaded_at)
+        VALUES (?, ?, 'pending', ?)
+    ''', (user_id, file_path, datetime.now()))
+    conn.commit()
+    cert_id = c.lastrowid
+    conn.close()
+    return cert_id
+
+
+def get_latest_doctor_certificate(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT * FROM doctor_certificates
+        WHERE user_id = ?
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+    ''', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_certificate_by_id(cert_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM doctor_certificates WHERE id = ?', (cert_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_pending_certificates():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT dc.id, dc.user_id, dc.file_path, dc.status, dc.notes, dc.uploaded_at,
+               u.username, d.name AS doctor_name, d.specialty
+        FROM doctor_certificates dc
+        JOIN users u ON dc.user_id = u.id
+        LEFT JOIN doctors d ON d.user_id = u.id
+        WHERE dc.status = 'pending'
+        ORDER BY dc.uploaded_at DESC
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def review_doctor_certificate(cert_id, status, reviewed_by, notes=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE doctor_certificates
+        SET status = ?, notes = ?, reviewed_by = ?, reviewed_at = ?
+        WHERE id = ?
+    ''', (status, notes, reviewed_by, datetime.now(), cert_id))
+
+    # Keep user verification status in sync with certificate review.
+    if status in ('approved', 'rejected'):
+        c.execute('SELECT user_id FROM doctor_certificates WHERE id = ?', (cert_id,))
+        row = c.fetchone()
+        if row:
+            verified = 1 if status == 'approved' else 0
+            c.execute('UPDATE users SET is_verified = ? WHERE id = ?', (verified, row[0]))
+
+    conn.commit()
+    conn.close()
 
 def clear_session_messages(session_id):
     conn = sqlite3.connect(DB_PATH)
