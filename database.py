@@ -159,6 +159,15 @@ def init_db():
         ]
         c.executemany('INSERT INTO doctors (name, specialty, rating, location, lat, lon, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)', doctors)
         
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS translation_cache (
+            lang TEXT,
+            source_text TEXT,
+            translated_text TEXT,
+            PRIMARY KEY (lang, source_text)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -351,11 +360,32 @@ def get_doctor_user_id(doctor_id):
     conn.close()
     return row[0] if row else None
 
+
+def get_doctor_by_id(doctor_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+        SELECT d.id, d.user_id, d.name, d.specialty, d.location, d.lat, d.lon, d.image_url
+        FROM doctors d
+        WHERE d.id = ?
+    ''', (doctor_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def save_doctor_profile(user_id, data):
     name = data.get('name')
     specialty = data.get('specialty')
     location = data.get('location')
     lat, lon = data.get('lat'), data.get('lon')
+    image_url = data.get('image_url')
+
+    try:
+        lat = float(lat) if lat not in (None, '') else None
+        lon = float(lon) if lon not in (None, '') else None
+    except (TypeError, ValueError):
+        lat, lon = None, None
     
     if location and (not lat or not lon):
         lat, lon = geocode_address(location)
@@ -369,12 +399,12 @@ def save_doctor_profile(user_id, data):
     
     if row:
         c.execute('''
-            UPDATE doctors SET name=?, specialty=?, location=?, lat=?, lon=?
+            UPDATE doctors SET name=?, specialty=?, location=?, lat=?, lon=?, image_url=COALESCE(?, image_url)
             WHERE user_id=?
-        ''', (name, specialty, location, lat, lon, user_id))
+        ''', (name, specialty, location, lat, lon, image_url, user_id))
     else:
         # Get default image if not provided
-        image_url = data.get('image_url', 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&q=80&w=200&h=200')
+        image_url = image_url or 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&q=80&w=200&h=200'
         c.execute('''
             INSERT INTO doctors (user_id, name, specialty, rating, location, lat, lon, image_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -388,7 +418,14 @@ def get_doctor_appointments(doctor_id, date_filter=None):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     query = '''
-        SELECT a.*, COALESCE(p.full_name, u.username) as patient_name, p.phone as patient_phone
+        SELECT a.*,
+               COALESCE(p.full_name, u.username) as patient_name,
+               p.age as patient_age,
+               p.gender as patient_gender,
+               p.email as patient_email,
+               p.phone as patient_phone,
+               p.location as patient_location,
+               p.medical_history as patient_medical_history
         FROM appointments a
         JOIN sessions s ON a.session_id = s.session_id
         JOIN users u ON s.user_id = u.id
@@ -610,6 +647,7 @@ def get_doctor_free_slots(doctor_id, start_date=None, days_ahead=7):
 
 def get_session_analytics(session_id):
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
     # Count symptoms per session
@@ -619,7 +657,10 @@ def get_session_analytics(session_id):
     all_symptoms = []
     for row in rows:
         if row[0]:
-            all_symptoms.extend(json.loads(row[0]))
+            try:
+                all_symptoms.extend(json.loads(row[0]))
+            except Exception:
+                continue
             
     # Count messages
     c.execute('SELECT COUNT(*) FROM messages WHERE session_id = ?', (session_id,))
@@ -627,6 +668,36 @@ def get_session_analytics(session_id):
 
     c.execute('SELECT COUNT(*) FROM appointments WHERE session_id = ?', (session_id,))
     appointment_count = c.fetchone()[0]
+
+    symptom_frequency = {}
+    for symptom in all_symptoms:
+        key = str(symptom).strip()
+        if not key:
+            continue
+        symptom_frequency[key] = symptom_frequency.get(key, 0) + 1
+
+    c.execute('''
+        SELECT SUBSTR(timestamp, 1, 10) AS day_key, COUNT(*) AS total
+        FROM messages
+        WHERE session_id = ?
+          AND SUBSTR(timestamp, 1, 10) >= DATE('now', '-6 day')
+        GROUP BY day_key
+        ORDER BY day_key ASC
+    ''', (session_id,))
+    daily_rows = c.fetchall()
+    daily_map = {row['day_key']: row['total'] for row in daily_rows if row['day_key']}
+
+    activity_labels = []
+    activity_values = []
+    for i in range(6, -1, -1):
+        d = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        activity_labels.append(d)
+        activity_values.append(int(daily_map.get(d, 0)))
+
+    symptom_signal = min(len(set(all_symptoms)) * 4, 24)
+    message_signal = min(message_count * 3, 36)
+    appointment_signal = min(appointment_count * 12, 24)
+    health_index = max(0, min(100, 20 + symptom_signal + message_signal + appointment_signal))
     
     conn.close()
     
@@ -634,7 +705,11 @@ def get_session_analytics(session_id):
         'symptom_count': len(set(all_symptoms)),
         'message_count': message_count,
         'appointment_count': appointment_count,
-        'unique_symptoms': list(set(all_symptoms))
+        'unique_symptoms': list(set(all_symptoms)),
+        'symptom_frequency': symptom_frequency,
+        'activity_labels': activity_labels,
+        'activity_values': activity_values,
+        'health_index': health_index
     }
 
 def create_user(username, password_hash, role):
@@ -1000,4 +1075,22 @@ def get_admin_stats():
     
     conn.close()
     return stats
+
+
+def get_cached_translation(lang, source_text):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT translated_text FROM translation_cache WHERE lang = ? AND source_text = ?', (lang, source_text))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def cache_translation(lang, source_text, translated_text):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT OR REPLACE INTO translation_cache (lang, source_text, translated_text) VALUES (?, ?, ?)',
+              (lang, source_text, translated_text))
+    conn.commit()
+    conn.close()
 

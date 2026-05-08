@@ -7,6 +7,7 @@ __pycache__/
 *.pyd
 *.py[cod]
 
+
 # =========================
 # Virtual Environment
 # =========================
@@ -25,6 +26,7 @@ venv/
 models/
 *.pt
 *.bin
+data/
 
 # =========================
 # Cookies / Sensitive Data
@@ -62,3 +64,4 @@ Thumbs.db
 # Temporary Files
 # =========================
 *.swp
+howtorun.txt

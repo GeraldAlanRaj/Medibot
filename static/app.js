@@ -16,6 +16,7 @@ let currentFacilityType = 'hospital';
 let routingLayer = null;
 let selectedAppointmentSlot = null;
 let notificationsRefreshTimer = null;
+let facilityRequestSeqByType = { hospital: 0, doctor: 0 };
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkAuth();
@@ -63,6 +64,7 @@ function setupEventListeners() {
     const markAllNotificationsBtn = document.getElementById("mark-all-notifications-btn");
     const saveAvailabilityBtn = document.getElementById("save-availability-btn");
     const uploadCertificateBtn = document.getElementById("upload-certificate-btn");
+    const uploadProfileImageBtn = document.getElementById("upload-profile-image-btn");
     const appointmentDate = document.getElementById("appointment-date");
     const doctorAppointmentsDate = document.getElementById("doctor-appointments-date");
     const doctorAppointmentsToday = document.getElementById("doctor-appointments-today");
@@ -107,9 +109,8 @@ function setupEventListeners() {
     if (langSelect) {
         langSelect.onchange = (e) => {
             currentLanguage = e.target.value;
-            if (recognition) {
-                const speechMap = { "en": "en-US", "hi": "hi-IN", "es": "es-ES", "fr": "fr-FR" };
-                recognition.lang = speechMap[currentLanguage] || "en-US";
+            if (typeof updateSpeechLanguage === 'function') {
+                updateSpeechLanguage();
             }
         };
     }
@@ -119,6 +120,7 @@ function setupEventListeners() {
     if (markAllNotificationsBtn) markAllNotificationsBtn.onclick = markAllNotificationsRead;
     if (saveAvailabilityBtn) saveAvailabilityBtn.onclick = saveAvailability;
     if (uploadCertificateBtn) uploadCertificateBtn.onclick = uploadCertificate;
+    if (uploadProfileImageBtn) uploadProfileImageBtn.onclick = uploadDoctorProfileImage;
     if (appointmentDate) {
         appointmentDate.onchange = () => {
             if (selectedDoctor) loadDoctorSlots(selectedDoctor.id);
@@ -490,6 +492,8 @@ async function switchFacilityType(type) {
 }
 
 async function fetchFacilities(type, lat = null, lng = null) {
+    const typeKey = type === 'hospital' ? 'hospital' : 'doctor';
+    const requestId = ++facilityRequestSeqByType[typeKey];
     const list = document.getElementById('facilities-list');
     let url = type === 'hospital' ? '/api/hospitals' : '/api/doctors/nearby';
     if (lat && lng) url += `?lat=${lat}&lng=${lng}`;
@@ -497,6 +501,12 @@ async function fetchFacilities(type, lat = null, lng = null) {
     try {
         const res = await fetch(url);
         const data = await res.json();
+
+        // Ignore stale responses if user switched tabs while request was in flight.
+        if (requestId !== facilityRequestSeqByType[typeKey] || type !== currentFacilityType) {
+            return;
+        }
+
         list.innerHTML = '';
 
         // Clear existing markers
@@ -510,7 +520,7 @@ async function fetchFacilities(type, lat = null, lng = null) {
 
         data.forEach(item => {
             const facilityLat = item.lat || item.latitude;
-            const facilityLng = item.lng || item.longitude;
+            const facilityLng = item.lng || item.lon || item.longitude;
 
             if (facilityLat && facilityLng) {
                 const marker = L.marker([facilityLat, facilityLng], {
@@ -834,7 +844,7 @@ async function sendMessage() {
 
         hideTyping();
         const responseText = data.reply || "No response content received.";
-        const formatted = responseText.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+        const formatted = formatMarkdown(responseText);
         appendMessage(formatted, "agent");
     } catch (e) {
         console.error("Message send failed:", e);
@@ -849,6 +859,34 @@ function scrollToBottom() {
         top: chatBox.scrollHeight,
         behavior: 'smooth'
     });
+}
+
+
+function formatMarkdown(text) {
+    if (!text) return '';
+    let html = text;
+    // Headers: ### and ##
+    html = html.replace(/^### (.+)$/gm, '<h4 class="font-bold text-sm mt-3 mb-1">$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3 class="font-bold text-base mt-3 mb-1">$1</h3>');
+    // Bold
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs">$1</code>');
+    // Bullet lists (- or *)
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
+    // Numbered lists
+    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
+    // Wrap consecutive <li> in <ul>
+    html = html.replace(/((?:<li[^>]*>.*?<\/li>\s*)+)/g, '<ul class="my-1">$1</ul>');
+    // Newlines to <br> (but not inside tags and not after block elements)
+    html = html.replace(/\n/g, '<br>');
+    // Clean up excessive <br> after block elements
+    html = html.replace(/(<\/h[34]>)<br>/g, '$1');
+    html = html.replace(/(<\/ul>)<br>/g, '$1');
+    html = html.replace(/(<br>){3,}/g, '<br><br>');
+    return html;
 }
 
 function appendMessage(text, role) {
@@ -895,11 +933,29 @@ function hideTyping() {
 /** 
  * Speech Recognition Integration 
  */
+function updateSpeechLanguage() {
+    if (recognition) {
+        const speechMap = { 
+            "en": "en-US", 
+            "hi": "hi-IN", 
+            "es": "es-ES", 
+            "fr": "fr-FR",
+            "de": "de-DE",
+            "zh": "zh-CN",
+            "ja": "ja-JP",
+            "ar": "ar-SA"
+        };
+        recognition.lang = speechMap[currentLanguage] || "en-US";
+    }
+}
+
 function initSpeechRecognition(btn, input) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return btn.style.display = "none";
 
     recognition = new SR();
+    updateSpeechLanguage();
+    
     recognition.onresult = (e) => {
         input.value = e.results[0][0].transcript;
         stopSTT(btn, input);
@@ -911,6 +967,7 @@ function initSpeechRecognition(btn, input) {
         if (isRecording) {
             recognition.stop();
         } else {
+            updateSpeechLanguage();
             recognition.start();
             btn.classList.add("recording-pulse");
             input.placeholder = "System listening...";
@@ -929,7 +986,24 @@ function stopSTT(btn, input) {
  * Analytics & Charts
  */
 async function updateAnalytics() {
-    if (!sessionId) return;
+    if (!sessionId) {
+        document.getElementById('stat-sessions').innerText = '0';
+        document.getElementById('stat-symptoms').innerText = '0';
+        document.getElementById('stat-appointments').innerText = '0';
+        document.getElementById('stat-index').innerText = '0%';
+        if (window.symptomsChart) {
+            window.symptomsChart.data.labels = [];
+            window.symptomsChart.data.datasets[0].data = [];
+            window.symptomsChart.update();
+        }
+        if (window.activityChart) {
+            window.activityChart.data.labels = [];
+            window.activityChart.data.datasets[0].data = [];
+            window.activityChart.update();
+        }
+        return;
+    }
+
     try {
         const res = await fetch(`/api/analytics?session_id=${sessionId}`);
         const data = await res.json();
@@ -937,12 +1011,20 @@ async function updateAnalytics() {
         document.getElementById('stat-sessions').innerText = data.message_count > 0 ? "1" : "0";
         document.getElementById('stat-symptoms').innerText = data.symptom_count || "0";
         document.getElementById('stat-appointments').innerText = data.appointment_count || "0";
+        document.getElementById('stat-index').innerText = `${data.health_index || 0}%`;
 
-        // Update charts with real data
-        if (window.symptomsChart && data.unique_symptoms.length > 0) {
-            window.symptomsChart.data.labels = data.unique_symptoms;
-            window.symptomsChart.data.datasets[0].data = data.unique_symptoms.map(() => Math.floor(Math.random() * 5) + 1); // For demo, random freq but real symptoms
+        if (window.symptomsChart) {
+            const freq = data.symptom_frequency || {};
+            const labels = Object.keys(freq);
+            window.symptomsChart.data.labels = labels;
+            window.symptomsChart.data.datasets[0].data = labels.map(label => freq[label]);
             window.symptomsChart.update();
+        }
+
+        if (window.activityChart) {
+            window.activityChart.data.labels = data.activity_labels || [];
+            window.activityChart.data.datasets[0].data = data.activity_values || [];
+            window.activityChart.update();
         }
     } catch (e) {
         console.error("Analytics failure", e);
@@ -954,10 +1036,10 @@ function initCharts() {
     window.symptomsChart = new Chart(ctx1, {
         type: 'bar',
         data: {
-            labels: ['Headache', 'Fever', 'Cough'],
+            labels: [],
             datasets: [{
                 label: 'Occurrences',
-                data: [5, 2, 3],
+                data: [],
                 backgroundColor: '#3b82f6',
                 borderRadius: 8
             }]
@@ -969,10 +1051,10 @@ function initCharts() {
     window.activityChart = new Chart(ctx2, {
         type: 'line',
         data: {
-            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            labels: [],
             datasets: [{
                 label: 'Interactions',
-                data: [12, 19, 3, 5, 2],
+                data: [],
                 borderColor: '#10b981',
                 tension: 0.4,
                 fill: true,
@@ -1305,10 +1387,15 @@ async function loadDoctorData() {
             const nameInput = document.getElementById("doc-profile-name");
             const specialtyInput = document.getElementById("doc-profile-specialty");
             const locInput = document.getElementById("doc-profile-location");
+            const latInput = document.getElementById("doc-profile-lat");
+            const lonInput = document.getElementById("doc-profile-lon");
 
             if (nameInput) nameInput.value = doctor.name || "";
             if (specialtyInput) specialtyInput.value = doctor.specialty || "";
             if (locInput) locInput.value = doctor.location || "";
+            if (latInput) latInput.value = doctor.lat ?? "";
+            if (lonInput) lonInput.value = doctor.lon ?? "";
+            setDoctorProfilePreview(doctor.image_url);
 
             renderDoctorAvailabilityGrid();
             if (isVerifiedDoctor) {
@@ -1473,18 +1560,21 @@ function renderDoctorAppointments(appointments) {
 
     list.innerHTML = appointments.map(app => `
         <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 group">
-            <div class="flex items-center gap-6">
+            <div class="flex items-start gap-6">
                 <div class="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
                     <i class="fa-solid fa-user"></i>
                 </div>
                 <div>
                     <h4 class="font-bold text-slate-800 text-lg">${app.patient_name || 'Anonymous Patient'}</h4>
-                    <p class="text-slate-400 text-sm flex items-center gap-2">
+                    <p class="text-slate-400 text-sm flex items-center gap-2 mb-1">
                         <i class="fa-solid fa-clock opacity-50"></i> ${app.appointment_time}
                         <span class="px-2 py-0.5 rounded-full text-[10px] uppercase font-black tracking-widest ${getStatusClass(app.status)}">
                             ${app.status}
                         </span>
                     </p>
+                    <p class="text-xs text-slate-500">Phone: ${app.patient_phone || 'Not provided'} | Email: ${app.patient_email || 'Not provided'}</p>
+                    <p class="text-xs text-slate-500">Age: ${app.patient_age ?? 'N/A'} | Gender: ${app.patient_gender || 'N/A'} | Location: ${app.patient_location || 'N/A'}</p>
+                    <p class="text-xs text-slate-500 mt-1">History: ${app.patient_medical_history || 'Not provided'}</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -1575,7 +1665,9 @@ async function saveDoctorProfile() {
     const profile = {
         name: document.getElementById("doc-profile-name").value,
         specialty: document.getElementById("doc-profile-specialty").value,
-        location: document.getElementById("doc-profile-location").value
+        location: document.getElementById("doc-profile-location").value,
+        lat: document.getElementById("doc-profile-lat")?.value,
+        lon: document.getElementById("doc-profile-lon")?.value
     };
 
     if (!profile.name) {
@@ -1597,5 +1689,45 @@ async function saveDoctorProfile() {
     } catch (e) {
         console.error("Failed to save profile", e);
         alert("Action failed. Please try again.");
+    }
+}
+
+function setDoctorProfilePreview(imageUrl) {
+    const img = document.getElementById('doctor-profile-preview');
+    if (!img) return;
+    if (!imageUrl) {
+        img.classList.add('hidden');
+        img.removeAttribute('src');
+        return;
+    }
+    img.src = imageUrl;
+    img.classList.remove('hidden');
+}
+
+async function uploadDoctorProfileImage() {
+    const input = document.getElementById('doctor-profile-image-file');
+    if (!input || !input.files || !input.files[0]) {
+        alert('Please select an image first.');
+        return;
+    }
+
+    const form = new FormData();
+    form.append('image', input.files[0]);
+
+    try {
+        const res = await fetch('/api/doctor/profile-image', {
+            method: 'POST',
+            body: form
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            alert((data && data.error) || 'Image upload failed.');
+            return;
+        }
+        setDoctorProfilePreview(data.image_url);
+        alert('Profile image updated successfully.');
+        await loadDoctorData();
+    } catch (e) {
+        alert('Image upload failed.');
     }
 }

@@ -591,6 +591,28 @@
                                     class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
                                     placeholder="Street Address, City">
                             </div>
+                            <div class="space-y-4">
+                                <label class="text-sm font-black text-slate-400 uppercase tracking-widest">Latitude</label>
+                                <input type="number" step="any" id="doc-profile-lat"
+                                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                                    placeholder="e.g. 12.971599">
+                            </div>
+                            <div class="space-y-4">
+                                <label class="text-sm font-black text-slate-400 uppercase tracking-widest">Longitude</label>
+                                <input type="number" step="any" id="doc-profile-lon"
+                                    class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all font-bold text-slate-800"
+                                    placeholder="e.g. 77.594566">
+                            </div>
+                        </div>
+
+                        <div class="mt-10 border-t pt-8">
+                            <h4 class="text-lg font-black text-slate-800 mb-2">Profile Photo</h4>
+                            <p class="text-sm text-slate-500 mb-3">Upload your professional display image for patient booking cards.</p>
+                            <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
+                                <img id="doctor-profile-preview" src="" alt="Doctor Profile" class="w-16 h-16 rounded-2xl object-cover border border-slate-200 hidden" />
+                                <input type="file" id="doctor-profile-image-file" accept=".png,.jpg,.jpeg,.webp" class="p-2 border border-slate-200 rounded-xl" />
+                                <button id="upload-profile-image-btn" class="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold">Upload Photo</button>
+                            </div>
                         </div>
 
                         <div class="mt-10 border-t pt-8">

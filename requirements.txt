@@ -123,7 +123,7 @@ tenacity==8.5.0
 thinc==8.2.5
 threadpoolctl==3.6.0
 tokenizers==0.21.4
-torch==2.10.0+cpu
+torch==2.10.0
 tqdm==4.67.3
 transformers==4.48.2
 typer==0.24.1
@@ -144,3 +144,5 @@ wrapt==1.17.3
 xxhash==3.6.0
 yarl==1.22.0
 zstandard==0.25.0
+
+groq

@@ -11,6 +11,7 @@ from langchain_community.vectorstores import FAISS # pyre-ignore[21]
 from langchain_huggingface import HuggingFaceEmbeddings # pyre-ignore[21]
 from langchain_core.documents import Document # pyre-ignore[21]
 from transformers import pipeline # pyre-ignore[21]
+from llm_api import ask_llm
 
 class MLModels:
     def __init__(self):
@@ -35,17 +36,31 @@ class MLModels:
         self.cross_lang_map = {
             "सिरदर्द": "headache",
             "बुखार": "high_fever",
+            "जुकाम": "continuous_sneezing",
+            "छींक": "continuous_sneezing",
             "cold": "continuous_sneezing",
             "itching": "itching",
             "khujli": "itching",
             "खांसी": "cough",
             "दर्द": "muscle_pain",
+            "जोड़ों में दर्द": "joint_pain",
+            "थकान": "fatigue",
+            "उल्टी": "vomiting",
+            "जी मिचलाना": "nausea",
+            "दस्त": "diarrhoea",
+            "सांस लेने में तकलीफ": "breathlessness",
+            "सीने में दर्द": "chest_pain",
+            "खुजली": "itching",
+            "चक्कर": "dizziness",
+            "fever": "high_fever",
             "fiebre": "high_fever",
             "dolor de cabeza": "headache",
             "tos": "cough",
             "fatiga": "fatigue",
             "fièvre": "high_fever",
-            "maux de tête": "headache"
+            "maux de tête": "headache",
+            "schwindel": "dizziness",
+            "müdigkeit": "fatigue"
         }
 
         # Never ask these in routine follow-ups unless user context clearly indicates sexual-risk triage.
@@ -67,12 +82,11 @@ class MLModels:
             "mild_fever"
         ]
 
-        # Columns that are not direct symptoms should never be asked as follow-ups.
         self.non_clinical_followup_symptoms = {
             "family_history"
         }
 
-        self.use_ollama = os.getenv('USE_OLLAMA', '0').lower() in ('1', 'true', 'yes')
+        self.use_ollama = os.getenv('USE_OLLAMA', '1').lower() in ('1', 'true', 'yes')
         self.ollama_url = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
         self.ollama_model = os.getenv('OLLAMA_MODEL', 'llama3.1:8b')
         
@@ -180,12 +194,42 @@ class MLModels:
                 pickle.dump(clf, f)
             return clf
 
-    def extract_symptoms(self, text):
+    def extract_symptoms_llm(self, text, language='en'):
+        """
+        Uses Gemini to extract symptoms from natural language and map them 
+        to the internal English symptom keys.
+        """
+        prompt = (
+            f"Extract medical symptoms from the following text: \"{text}\"\n"
+            f"Map them to the most relevant symptoms from this list: {', '.join(self.symptoms_list)}\n"
+            f"Return ONLY a comma-separated list of the relevant English keys. If none match, return 'none'."
+        )
+        
+        try:
+            result = ask_llm(prompt, language=language)
+            if not result or result.lower() == 'none' or result.startswith('['):
+                return []
+            
+            # Parse comma-separated keys
+            extracted = [s.strip().lower() for s in result.split(',')]
+            # Validate against symptoms_list
+            valid = [s for s in extracted if s in self.symptoms_list]
+            return valid
+        except Exception as e:
+            print(f"[DEBUG] LLM Extraction error: {e}")
+            return []
+
+    def extract_symptoms(self, text, language='en'):
+        # Fallback to LLM extraction for non-English or complex sentences
+        if language != 'en' or len(text.split()) > 3:
+            llm_symptoms = self.extract_symptoms_llm(text, language=language)
+            if llm_symptoms:
+                return llm_symptoms
+
         text_lower = text.lower().replace("_", " ")
         extracted = []
         
         # 0. Quick common typo/shorthand mapping
-        # Order matters: check longer phrases first, then single words
         phrase_map = {
             "chest pain": "chest_pain",
             "shortness of breath": "breathlessness",
@@ -201,12 +245,10 @@ class MLModels:
             "mild fever": "mild_fever",
             "high fever": "high_fever",
         }
-        # Apply phrase mappings first (longer matches)
         for phrase, correct in phrase_map.items():
             if str(phrase) in str(text_lower):
                 text_lower = str(text_lower).replace(str(phrase), str(correct))
         
-        # Single-word typo corrections (applied AFTER phrase mapping)
         word_map = {
             "vomating": "vomiting",
             "vommit": "vomiting",
@@ -220,14 +262,12 @@ class MLModels:
         for typo, correct in word_map.items():
             if typo == "fever" and ("mild_fever" in str(text_lower) or "high_fever" in str(text_lower)):
                 continue
-            # Only replace if the typo hasn't already been handled by phrase_map
             if str(typo) in str(text_lower) and str(correct) not in str(text_lower):
                 text_lower = str(text_lower).replace(str(typo), str(correct))
 
         normalized_text = re.sub(r"\s+", " ", text_lower.replace("_", " ")).strip()
 
         def is_negated(surface_form):
-            # Lightweight negation detection: ignore symptom if user says no/not/without/denies near it.
             if re.search(rf"\b(?:but|however)\s+{re.escape(surface_form)}\b", normalized_text):
                 return False
             neg_patterns = [
@@ -236,9 +276,7 @@ class MLModels:
             ]
             return any(re.search(pattern, normalized_text) for pattern in neg_patterns)
 
-        # 1. Check English symptoms list
         for symptom in self.symptoms_list:
-            # Match both underscore and space version
             symptom_space = str(symptom).replace("_", " ")
             symptom_pattern = rf"\b{re.escape(symptom_space)}\b"
             if re.search(symptom_pattern, normalized_text):
@@ -246,7 +284,6 @@ class MLModels:
                     continue
                 extracted.append(symptom)
                 
-        # 2. Check Cross-language map
         for key, val in self.cross_lang_map.items():
             if str(key) in str(normalized_text):
                 extracted.append(val)
@@ -266,7 +303,6 @@ class MLModels:
             if s in current_symptoms:
                 features[i] = 1
                 
-        # Convert to DataFrame to avoid UserWarning about feature names
         features_df = pd.DataFrame([features], columns=self.symptoms_list)
         probs = self.rf_model.predict_proba(features_df)[0]
         max_prob_idx = np.argmax(probs)
@@ -276,10 +312,6 @@ class MLModels:
         return disease, confidence
 
     def get_relevant_followups(self, current_symptoms, user_message="", excluded_symptoms=None):
-        """
-        Suggests relevant follow-up symptoms using weighted top-disease evidence,
-        while suppressing sensitive prompts for routine conversations.
-        """
         excluded = set(excluded_symptoms or [])
 
         if not current_symptoms:
@@ -288,7 +320,6 @@ class MLModels:
                 if s in self.symptoms_list and s not in excluded
             ][:3]
 
-        # Build feature frame for model inference.
         features = np.zeros(len(self.symptoms_list))
         for i, s in enumerate(self.symptoms_list):
             if s in current_symptoms:
@@ -327,7 +358,6 @@ class MLModels:
         )
 
         sanitized = []
-        # Prefer common non-alarming follow-ups first.
         ranked_generic_first = [
             s for s in ranked
             if s in self.safe_generic_followups and s not in current_symptoms and s not in excluded and s not in self.non_clinical_followup_symptoms
@@ -340,7 +370,6 @@ class MLModels:
             if len(sanitized) >= 3:
                 break
 
-        # Fallback to generic safe prompts if ranked candidates are sparse or filtered.
         for symptom in self.safe_generic_followups:
             if symptom in current_symptoms:
                 continue
@@ -356,7 +385,6 @@ class MLModels:
             if len(sanitized) >= 3:
                 break
 
-        # Only if still insufficient, use broader ranked options.
         for symptom in ranked:
             if len(sanitized) >= 3:
                 break
@@ -377,55 +405,19 @@ class MLModels:
     def rag_answer(self, query, language='en'):
         lang = (language or 'en').lower()
         language_names = {
-            'en': 'English',
-            'hi': 'Hindi',
-            'es': 'Spanish',
-            'fr': 'French',
-            'de': 'German',
-            'zh': 'Chinese',
-            'ja': 'Japanese',
-            'ar': 'Arabic'
+            'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French',
+            'de': 'German', 'zh': 'Chinese', 'ja': 'Japanese', 'ar': 'Arabic'
         }
         localized = {
             'en': {
                 'prefix': 'Based on medical knowledge:',
                 'sources': 'Sources',
-                'fallback': 'I could not derive enough detail. Please ask with more context (duration, severity, and age).'
+                'fallback': 'I could not derive enough detail. Please ask with more context.'
             },
             'hi': {
                 'prefix': 'उपलब्ध चिकित्सीय जानकारी के आधार पर:',
                 'sources': 'स्रोत',
-                'fallback': 'मैं पर्याप्त विवरण नहीं निकाल सका। कृपया अधिक संदर्भ (अवधि, गंभीरता, आयु) के साथ पूछें।'
-            },
-            'es': {
-                'prefix': 'Según el conocimiento médico disponible:',
-                'sources': 'Fuentes',
-                'fallback': 'No pude obtener suficiente detalle. Consulte con más contexto (duración, gravedad y edad).'
-            },
-            'fr': {
-                'prefix': 'Selon les connaissances médicales disponibles :',
-                'sources': 'Sources',
-                'fallback': "Je n'ai pas pu obtenir assez de détails. Veuillez poser la question avec plus de contexte (durée, gravité, âge)."
-            },
-            'de': {
-                'prefix': 'Basierend auf verfügbarem medizinischem Wissen:',
-                'sources': 'Quellen',
-                'fallback': 'Ich konnte nicht genügend Details ableiten. Bitte fragen Sie mit mehr Kontext (Dauer, Schweregrad, Alter).'
-            },
-            'zh': {
-                'prefix': '根据现有医学知识：',
-                'sources': '参考来源',
-                'fallback': '我暂时无法提取足够细节。请提供更多上下文（持续时间、严重程度、年龄）后再提问。'
-            },
-            'ja': {
-                'prefix': '利用可能な医療知識に基づく回答:',
-                'sources': '情報源',
-                'fallback': '十分な詳細を導き出せませんでした。期間・重症度・年齢などの文脈を追加して質問してください。'
-            },
-            'ar': {
-                'prefix': 'بناءً على المعرفة الطبية المتاحة:',
-                'sources': 'المصادر',
-                'fallback': 'تعذر علي استخراج تفاصيل كافية. يرجى السؤال مع سياق أكثر (المدة، الشدة، العمر).'
+                'fallback': 'मैं पर्याप्त विवरण नहीं निकाल सका। कृपया अधिक संदर्भ के साथ पूछें।'
             }
         }
         locale = localized.get(lang, localized['en'])
@@ -452,11 +444,7 @@ class MLModels:
                 )
                 res = requests.post(
                     f"{self.ollama_url}/api/generate",
-                    json={
-                        "model": self.ollama_model,
-                        "prompt": prompt,
-                        "stream": False
-                    },
+                    json={"model": self.ollama_model, "prompt": prompt, "stream": False},
                     timeout=20
                 )
                 if res.ok:
@@ -480,6 +468,41 @@ class MLModels:
             return f"{locale['prefix']} {answer}\n\n{locale['sources']}: {', '.join(citations)}"
         return f"{locale['prefix']} {answer}"
 
+    def ask_ollama_direct(self, query, language='en'):
+        if not self.use_ollama:
+            return None
+        language_names = {'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French'}
+        answer_language = language_names.get((language or 'en').lower(), 'English')
+        prompt = f"You are a safe medical assistant. Respond in {answer_language}.\n\nQuestion: {query}"
+        try:
+            res = requests.post(f"{self.ollama_url}/api/generate",
+                                 json={"model": self.ollama_model, "prompt": prompt, "stream": False},
+                                 timeout=20)
+            if res.ok:
+                return (res.json().get('response') or '').strip()
+        except:
+            pass
+        return None
+
+    def diagnosis_explanation(self, disease, confidence_pct, symptoms, language='en'):
+        if not self.use_ollama:
+            return ""
+        language_names = {'en': 'English', 'hi': 'Hindi', 'es': 'Spanish', 'fr': 'French'}
+        answer_language = language_names.get((language or 'en').lower(), 'English')
+        symptom_text = ', '.join(symptoms or [])
+        prompt = (
+            f"Explain why {symptom_text} might indicate {disease} ({confidence_pct}% confidence). "
+            f"Max 80 words. Respond in {answer_language}."
+        )
+        try:
+            res = requests.post(f"{self.ollama_url}/api/generate",
+                                 json={"model": self.ollama_model, "prompt": prompt, "stream": False},
+                                 timeout=15)
+            if res.ok:
+                return (res.json().get('response') or '').strip()
+        except:
+            pass
+        return ""
+
 # Singleton instance
 ml_models = MLModels()
-

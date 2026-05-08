@@ -20,8 +20,13 @@ from database import ( # pyre-ignore[21]
     get_appointment_by_id, save_doctor_certificate, get_latest_doctor_certificate,
     list_pending_certificates, review_doctor_certificate, get_doctor_user_id,
     get_certificate_by_id, get_doctor_chats, doctor_can_access_session,
+    get_doctor_by_id,
     is_doctor_verified
 )
+from dotenv import load_dotenv
+load_dotenv()
+import os
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 from agent import handle_user_input # pyre-ignore[21]
 
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
@@ -34,6 +39,17 @@ CORS(app)
 CERT_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'data', 'certificates')
 os.makedirs(CERT_UPLOAD_DIR, exist_ok=True)
 ALLOWED_CERT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
+PROFILE_IMG_UPLOAD_DIR = os.path.join(static_dir, 'uploads', 'doctor_profiles')
+os.makedirs(PROFILE_IMG_UPLOAD_DIR, exist_ok=True)
+ALLOWED_PROFILE_IMG_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+NYC_LAT = 40.7128
+NYC_LNG = -74.0060
+NY_BOUNDS = {
+    'min_lat': 40.30,
+    'max_lat': 41.20,
+    'min_lng': -74.40,
+    'max_lng': -73.40,
+}
 
 # Helper for role-based access
 def admin_required(f):
@@ -49,9 +65,28 @@ def _allowed_cert_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_CERT_EXTENSIONS
 
 
+def _allowed_profile_image_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_PROFILE_IMG_EXTENSIONS
+
+
 def _doctor_is_verified(user_id):
     user = get_user_by_id(user_id)
     return bool(user and user.get('role') == 'doctor' and user.get('is_verified'))
+
+
+def _is_new_york_coordinate(lat, lng):
+    if lat is None or lng is None:
+        return False
+    return (
+        NY_BOUNDS['min_lat'] <= float(lat) <= NY_BOUNDS['max_lat']
+        and NY_BOUNDS['min_lng'] <= float(lng) <= NY_BOUNDS['max_lng']
+    )
+
+
+def _normalize_new_york_coordinates(lat, lng):
+    if lat is None or lng is None:
+        return NYC_LAT, NYC_LNG
+    return float(lat), float(lng)
 
 # Initialize database
 init_db()
@@ -229,14 +264,16 @@ def handle_book_appointment():
         
     try:
         appointment_id = book_appointment(session_id, doctor_id, time)
+        doctor_info = get_doctor_by_id(doctor_id)
+        doctor_name = doctor_info.get('name') if doctor_info else 'doctor'
 
         # Notify patient
         create_notification(
             user_id,
             'Appointment Requested',
-            f'Your appointment request for {time} was submitted and is awaiting doctor confirmation.',
+            f'Your appointment request with {doctor_name} for {time} was submitted and is awaiting doctor confirmation.',
             'appointment',
-            {'appointment_id': appointment_id, 'status': 'pending'}
+            {'appointment_id': appointment_id, 'doctor_id': doctor_id, 'doctor_name': doctor_name, 'time': time, 'status': 'pending'}
         )
 
         # Notify doctor
@@ -245,9 +282,9 @@ def handle_book_appointment():
             create_notification(
                 doctor_user_id,
                 'New Appointment Request',
-                f'You have a new appointment request for {time}.',
+                f'New appointment request scheduled for {time}.',
                 'appointment',
-                {'appointment_id': appointment_id, 'status': 'pending'}
+                {'appointment_id': appointment_id, 'doctor_id': doctor_id, 'doctor_name': doctor_name, 'time': time, 'status': 'pending'}
             )
 
         return jsonify({
@@ -422,23 +459,24 @@ def handle_appointment_status():
         return jsonify({"success": False, "error": "Unauthorized appointment update"}), 403
     
     update_appointment_status(appointment_id, status)
+    doctor_name = doctor.get('name') if doctor else 'Doctor'
 
     patient_user_id = get_user_id_by_session(appointment['session_id'])
     if patient_user_id:
         create_notification(
             patient_user_id,
             'Appointment Status Updated',
-            f'Your appointment for {appointment["appointment_time"]} was {status}.',
+            f'Your appointment with {doctor_name} on {appointment["appointment_time"]} was {status}.',
             'appointment',
-            {'appointment_id': appointment_id, 'status': status}
+            {'appointment_id': appointment_id, 'doctor_id': appointment.get('doctor_id'), 'doctor_name': doctor_name, 'time': appointment.get('appointment_time'), 'status': status}
         )
 
     create_notification(
         user_id,
         'Appointment Updated',
-        f'Appointment #{appointment_id} marked as {status}.',
+            f'Appointment with patient session {appointment.get("session_id", "-")} at {appointment.get("appointment_time", "-")} marked as {status}.',
         'appointment',
-        {'appointment_id': appointment_id, 'status': status}
+            {'appointment_id': appointment_id, 'time': appointment.get('appointment_time'), 'status': status}
     )
     return jsonify({"success": True, "message": f"Appointment {status}"})
 
@@ -500,8 +538,8 @@ def get_analytics():
 def get_nearby_hospitals():
     lat = request.args.get('lat', type=float)
     lng = request.args.get('lng', type=float)
-    radius = request.args.get('radius', default=25000, type=int)
-    radius = max(3000, min(radius, 50000))
+    radius = request.args.get('radius', default=15000, type=int)
+    radius = max(3000, min(radius, 25000))
 
     if not lat or not lng:
         user_id = session.get('user_id')
@@ -510,6 +548,9 @@ def get_nearby_hospitals():
             if profile and profile.get('lat') and profile.get('lon'):
                 lat = float(profile['lat'])
                 lng = float(profile['lon'])
+
+    # Keep locator New York specific regardless of remote client geolocation.
+    lat, lng = _normalize_new_york_coordinates(lat, lng)
     
     # If coordinates provided, use Overpass API
     if lat and lng:
@@ -574,7 +615,8 @@ def get_nearby_hospitals():
 def fetch_nearby_doctors():
     lat = request.args.get('lat', type=float)
     lng = request.args.get('lng', type=float)
-    radius = request.args.get('radius', default=100, type=int)
+    radius = request.args.get('radius', default=30, type=int)
+    radius = max(5, min(radius, 120))
     
     if not lat or not lng:
         # Try to get from user profile
@@ -583,10 +625,51 @@ def fetch_nearby_doctors():
             profile = get_patient_info(user_id)
             if profile and profile.get('lat') and profile.get('lon'):
                 lat, lng = profile['lat'], profile['lon']
+            elif profile and profile.get('location'):
+                g_lat, g_lng = geocode_address(profile.get('location'))
+                if g_lat and g_lng:
+                    lat, lng = g_lat, g_lng
+
+    lat, lng = _normalize_new_york_coordinates(lat, lng)
     
-    if lat and lng:
-        return jsonify(get_nearby_doctors(lat, lng, radius))
-    return jsonify(get_doctors())
+    nearby = get_nearby_doctors(lat, lng, radius)
+    return jsonify(nearby)
+
+
+@app.route('/api/doctor/profile-image', methods=['POST'])
+def upload_doctor_profile_image():
+    user_id = session.get('user_id')
+    if not user_id or session.get('role') != 'doctor':
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    if 'image' not in request.files:
+        return jsonify({"success": False, "error": "No image file uploaded"}), 400
+
+    file = request.files['image']
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": "Invalid file"}), 400
+
+    if not _allowed_profile_image_file(file.filename):
+        return jsonify({"success": False, "error": "Unsupported image type. Use JPG/PNG/WEBP."}), 400
+
+    safe_name = secure_filename(file.filename)
+    stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    filename = f'doc_{user_id}_{stamp}_{safe_name}'
+    target_path = os.path.join(PROFILE_IMG_UPLOAD_DIR, filename)
+    file.save(target_path)
+
+    image_url = f'/static/uploads/doctor_profiles/{filename}'
+    current = get_doctor_profile(user_id) or {}
+    save_doctor_profile(user_id, {
+        'name': current.get('name') or session.get('username') or 'Doctor',
+        'specialty': current.get('specialty') or 'General Physician',
+        'location': current.get('location') or '',
+        'lat': current.get('lat'),
+        'lon': current.get('lon'),
+        'image_url': image_url,
+    })
+
+    return jsonify({"success": True, "image_url": image_url})
 
 @app.route('/api/route', methods=['GET'])
 def get_osrm_route():

@@ -12,7 +12,7 @@ const Components = {
         card.innerHTML = `
             <!-- Left Side: Image -->
             <div class="md:w-72 w-full h-72 md:h-auto overflow-hidden relative">
-                <img src="${doctor.image_url}" alt="${doctor.name}" class="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110">
+                <img src="${doctor.image_url || 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&q=80&w=200&h=200'}" alt="${doctor.name}" class="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110">
                 <div class="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
                 <div class="absolute bottom-6 left-6">
                     <div class="flex items-center gap-2">
@@ -24,14 +24,6 @@ const Components = {
 
             <!-- Right Side: Details -->
             <div class="flex-1 p-10 flex flex-col justify-center relative bg-gradient-to-br from-white to-slate-50/50">
-                <div class="absolute top-6 right-10">
-                    <div class="flex items-center gap-1.5 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-full shadow-sm">
-                        <i class="fa-solid fa-star text-amber-400 text-xs"></i>
-                        <span class="text-amber-700 font-black text-xs">${doctor.rating}</span>
-                        <span class="text-slate-300 text-[9px] font-bold ml-1">| 2.5k+ Reviews</span>
-                    </div>
-                </div>
-
                 <div class="mb-6">
                     <div class="inline-block px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] mb-4 shadow-sm border border-blue-200/50">${doctor.specialty}</div>
                     <h3 class="text-4xl font-black text-slate-800 tracking-tighter mb-2 group-hover:text-blue-600 transition-colors">${doctor.name}</h3>
@@ -108,12 +100,6 @@ const Components = {
                 <p class="text-[10px] text-slate-500 truncate font-bold">${item.address || item.specialty || 'Medical Facility'}</p>
                 <div class="flex items-center gap-3 mt-1">
                     <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${item.distance ? item.distance + ' km Away' : 'Nearby'}</span>
-                    ${item.rating ? `
-                        <div class="flex items-center gap-1 text-amber-500">
-                            <i class="fa-solid fa-star text-[8px]"></i>
-                            <span class="text-[9px] font-black">${item.rating}</span>
-                        </div>
-                    ` : ''}
                 </div>
             </div>
             <div class="flex flex-col gap-2">
